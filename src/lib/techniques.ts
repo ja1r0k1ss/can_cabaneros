@@ -1,4 +1,4 @@
-import { TECHNIQUES, type Technique } from '../data/techniques.ts'
+import { TECHNIQUES, type Technique } from '../data/techniques.js'
 
 export type Segment = string | { texto: string; tecnica: Technique }
 

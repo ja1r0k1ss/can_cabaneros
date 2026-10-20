@@ -1,8 +1,8 @@
-import { INGREDIENT_VOCAB } from '../data/ingredientVocab.ts'
+import { INGREDIENT_VOCAB } from '../data/ingredientVocab.js'
 import type { Unit } from '../types/inventory'
 import type { Recipe, RecipeIngredient } from '../types/recipe'
-import { inferUtensils, matchesName, parseRecipeText, stepSeconds } from './recipes.ts'
-import { newId, normalize, round2 } from './utils.ts'
+import { inferUtensils, matchesName, parseRecipeText, stepSeconds } from './recipes.js'
+import { newId, normalize, round2 } from './utils.js'
 
 const PLATFORMS: [RegExp, string][] = [
   [/(^|\.)tiktok\.com$/, 'TikTok'],
@@ -23,7 +23,9 @@ export function detectPlatform(url: string): string | null {
 /** Captions often arrive as one line: break before section headers, numbered steps and bullets so the line parser can read them */
 export const normalizeCaption = (text: string) =>
   text
-    .replace(/\s*((?:\p{Extended_Pictographic}️?\s*)*(?:ingredientes|preparaci[oó]n|pasos|elaboraci[oó]n|instrucciones)\s*:)\s*/giu, '\n$1\n')
+    .replace(/\s*((?:\p{Extended_Pictographic}\uFE0F?\s*)*(?:ingredientes|preparaci[oó]n|pasos|elaboraci[oó]n|instrucciones)\s*[:;])\s*/giu, '\n$1\n')
+    // " - 12 Salchichas - 2 cebollas": inline dash bullets
+    .replace(/\s+-\s+(?=[\p{L}\d])/gu, '\n- ')
     .replace(/\s+(?=(?:paso\s*)?\d+\s*[.)]\s+\p{L})/giu, '\n')
     .replace(/\s+(?=[•✅▪]\s*)/gu, '\n')
     .trim()
@@ -32,7 +34,7 @@ export const normalizeCaption = (text: string) =>
 export function cleanTitle(text: string) {
   const line = (text.split('\n').find((l) => l.replace(/#\S+/g, '').trim()) ?? '')
     .replace(/#\S+/g, '')
-    .replace(/\p{Extended_Pictographic}️?/gu, '')
+    .replace(/\p{Extended_Pictographic}\uFE0F?/gu, '')
     .replace(/\s+/g, ' ')
     // one-line captions continue with servings/times: keep only the dish name
     .replace(/\s*(?:[|·]\s*)?(?:para\s+\d+|\d+\s*(?:raciones|personas|porciones)|prep\p{L}*|cocci[oó]n|⏱).*$/iu, '')
@@ -97,8 +99,50 @@ const SPOKEN_UNITS: [RegExp, Unit, number][] = [
   [/^(dientes?|unidades?|piezas?|latas?|botes?)$/, 'ud', 1],
 ]
 const NOT_INGREDIENT = /^(minutos?|horas?|segundos?|grados?|veces|personas?|raciones|porciones|poco|poquito|chorrito|pizca|momento|rato|lado|vuelta|cosas?|pasos?)\b/
-const COOKING_VERB =
-  /^(?:(?:y|luego|después|ahora|primero|entonces|por último|finalmente|cuando\s[^,]+,)\s*,?\s*)*(añad|agreg|incorpor|ech|pon|coloc|cort|pic|ralla|mezcl|remuev|bat|cocin|cuec|hierv|hornea|fríe|fre|sofr|salte|dor|marc|calient|precalient|dej|reserv|retir|sirv|emplat|tritur|amas|unt|pel|lav|escurr|tap|baj|sub|espolvore|riega|vierte|vert)\p{L}*/iu
+// stems of cooking verbs in any person/form: "añade", "añadimos", "marcando", "doramos", "reincorporamos"…
+const VERB = String.raw`(?:añad|agreg|incorpor|reincorpor|ech|pon|coloc|cort|pic[ao]|ralla|mezcl|remuev|remov|bat|cocin|cuec|hierv|horne|fre[ií]|fr[ií]|sofr|salte|dor|marc|calient|calent|precalient|dej|reserv|retir|sac|salam|salpiment|sirv|serv|emplat|tritur|amas|unt|pel|lav|escurr|tap|espolvore|rieg|regam|viert|vert)\p{L}*`
+const LEAD = String.raw`(?:(?:y|luego|después|ahora|primero|entonces|también|finalmente|por último)\s+)*`
+const PRONOUN = String.raw`(?:(?:las|los|la|lo|les|le|se)\s+)?`
+const STEP_START = new RegExp(`^${LEAD}${PRONOUN}${VERB}(?!\\p{L})`, 'iu')
+const HAS_VERB = new RegExp(`(?<!\\p{L})${VERB}`, 'iu')
+// "cuando estén," / "una vez dorados," belong in front of the next action
+const CONDITION = /^(?:y\s+)?(?:cuando|una vez|mientras|en cuanto)\b/i
+const OUTRO = /\s*(?:y\s+)?(?:ya\s+)?(?:estar[áa]n?|est[áa]n?|quedan?|tendr[ée]is)\s+listas?\b.*$|\s*(?:y\s+)?a disfrutar.*$|\s*(?:dale like|s[ií]gueme|suscr[ií]bete|buen provecho).*$/i
+const DROP_LEAD = /^(?:(?:y|luego|después|ahora|primero|entonces|finalmente|por último)\s+)+/i
+
+const finish = (parts: string[]) => {
+  const t = parts.join(', ').replace(DROP_LEAD, '').trim()
+  return `${t[0].toUpperCase()}${t.slice(1)}${/[.!?]$/.test(t) ? '' : '.'}`
+}
+
+/**
+ * Steps from speech. Auto-captions arrive as fragments without punctuation, so the text is cut at commas and periods
+ * and regrouped: a clause starting with a cooking verb opens a step; "cuando…" clauses lead into the next one; other
+ * clauses continue the current step. Intros before the first action and sign-offs are dropped.
+ */
+function spokenSteps(text: string): string[] {
+  const steps: string[][] = []
+  let pending: string[] = []
+  // captions joined without punctuation: "…doramos los ajos y cuando se empiecen a dorar" is two clauses
+  for (const raw of text.split(/[.!?;]+|,|\s+(?=y\s+cuando\b)/i)) {
+    const clause = raw.replace(/[¡¿]/g, '').replace(OUTRO, '').trim()
+    if (!/\p{L}/u.test(clause)) continue
+    if (CONDITION.test(clause)) {
+      pending.push(clause.replace(/^y\s+/i, ''))
+    } else if (STEP_START.test(clause)) {
+      steps.push([...pending, clause])
+      pending = []
+    } else if (steps.length) {
+      steps[steps.length - 1].push(...pending, clause)
+      pending = []
+    } else {
+      // before the first action: chatter, unless the action is mid-clause ("y para hacerlas empezaremos marcando…")
+      const verb = clause.match(HAS_VERB)
+      if (verb?.index !== undefined && /ando|iendo$/i.test(verb[0])) steps.push([clause.slice(verb.index)])
+    }
+  }
+  return steps.map(finish).slice(0, 20)
+}
 
 /** Ingredients and steps from a spoken transcript ("pon 300 gramos de lentejas…"). Free, approximate: always flagged for review */
 export function parseSpokenRecipe(transcript: string): { ingredientes: RecipeIngredient[]; pasos: string[] } {
@@ -124,11 +168,6 @@ export function parseSpokenRecipe(transcript: string): { ingredientes: RecipeIng
     if (!ingredientes.some((i) => matchesName(nombre, i.nombre) || matchesName(i.nombre, nombre))) ingredientes.push({ nombre })
   }
 
-  const pasos = text
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim().replace(/^(?:y|luego|después|ahora|entonces|primero|finalmente|por último)\s*,?\s+/i, ''))
-    .filter((s) => s.length > 8 && COOKING_VERB.test(s))
-    .map((s) => s[0].toUpperCase() + s.slice(1))
-    .slice(0, 20)
+  const pasos = spokenSteps(transcript.replace(/\n+/g, ' '))
   return { ingredientes, pasos }
 }

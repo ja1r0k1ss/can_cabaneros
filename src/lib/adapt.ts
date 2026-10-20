@@ -1,6 +1,6 @@
 import type { Utensil } from '../types/inventory'
 import type { Recipe } from '../types/recipe'
-import { newId } from './utils.ts'
+import { newId } from './utils.js'
 
 export interface Adaptation {
   kind: 'slow' | 'air'

@@ -1,8 +1,8 @@
 import type { PantryItem } from '../types/inventory'
 import type { RecipeIngredient } from '../types/recipe'
-import { matchesName } from './recipes.ts'
-import { convert } from './units.ts'
-import { newId, normalize, round2 } from './utils.ts'
+import { matchesName } from './recipes.js'
+import { convert } from './units.js'
+import { newId, normalize, round2 } from './utils.js'
 
 type Stock = Pick<PantryItem, 'id' | 'nombre' | 'cantidad' | 'unidad' | 'fechaCaducidad'>
 

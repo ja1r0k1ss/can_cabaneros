@@ -1,4 +1,4 @@
-import { PANTRY_CATEGORIES, UNITS, type PantryItem, type ShoppingItem, type Utensil } from '../types/inventory.ts'
+import { PANTRY_CATEGORIES, UNITS, type PantryItem, type ShoppingItem, type Utensil } from '../types/inventory.js'
 import type { Recipe } from '../types/recipe'
 
 export interface KVStorage {

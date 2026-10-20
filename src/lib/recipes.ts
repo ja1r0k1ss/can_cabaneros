@@ -1,16 +1,42 @@
 import type { PantryItem, Unit, Utensil, UtensilCategory } from '../types/inventory'
 import type { Recipe, RecipeIngredient } from '../types/recipe'
-import { convert } from './units.ts'
-import { normalize, round2 } from './utils.ts'
+import { convert } from './units.js'
+import { normalize, round2 } from './utils.js'
 
-/** Parses a manual ingredient line: "200 g de arroz", "2 huevos", "500ml leche", "sal" */
+// household measures → ml, with the same equivalences the AI path uses
+const HOUSEHOLD: [RegExp, number][] = [
+  [/^(cdas?|cucharadas?)$/i, 15],
+  [/^(cditas?|cucharaditas?)$/i, 5],
+  [/^vasos?$/i, 200],
+  [/^tazas?$/i, 240],
+]
+// "buen chorro de vino", "una pizca de sal": real ingredient, no measurable amount
+const VAGUE_AMOUNT = /^(?:(?:un|una|1)\s+)?(?:(?:buen|gran|pequeño)\s+)?(?:chorro|chorrito|pizca|puñado|poco|poquito|toque)\s+de\s+/i
+
+/** Strips notes that aren't part of the name: "(se puede sustituir por…)", "al gusto" */
+const cleanName = (name: string) =>
+  name
+    .replace(/\s*\([^)]*\)/g, '')
+    .replace(/\s+(?:al gusto|a gusto|opcional)\s*$/i, '')
+    .trim()
+
+/** Parses a manual ingredient line: "200 g de arroz", "2 huevos", "500ml leche", "1 cdita de pimentón", "sal" */
 export function parseIngredientLine(line: string): RecipeIngredient | null {
   const text = line.trim()
   if (!text) return null
+  if (VAGUE_AMOUNT.test(text)) {
+    const nombre = cleanName(text.replace(VAGUE_AMOUNT, ''))
+    return nombre ? { nombre } : null
+  }
   // unit must be followed by whitespace so "1 limón" isn't read as 1 l of "imón"
-  const m = text.match(/^(\d+(?:[.,]\d+)?)\s*(?:(kg|g|ml|l|ud)(?=\s))?\s*(?:de\s+)?(.+)$/i)
-  if (!m) return { nombre: text }
-  return { nombre: m[3].trim(), cantidad: Number(m[1].replace(',', '.')), unidad: (m[2]?.toLowerCase() as Unit) ?? 'ud' }
+  const m = text.match(/^(\d+(?:[.,]\d+)?)\s*(?:(kg|g|ml|l|ud|cdas?|cucharadas?|cditas?|cucharaditas?|vasos?|tazas?)(?=\s))?\s*(?:de\s+)?(.+)$/i)
+  if (!m) return cleanName(text) ? { nombre: cleanName(text) } : null
+  const nombre = cleanName(m[3])
+  const cantidad = Number(m[1].replace(',', '.'))
+  const unit = m[2]?.toLowerCase()
+  const household = unit ? HOUSEHOLD.find(([re]) => re.test(unit)) : undefined
+  if (household) return { nombre, cantidad: round2(cantidad * household[1]), unidad: 'ml' }
+  return { nombre, cantidad, unidad: (unit as Unit | undefined) ?? 'ud' }
 }
 
 // connectors and measure words: "2 dientes de ajo" should still match "Ajo"
@@ -68,7 +94,7 @@ export interface ParsedRecipeText {
   pasos: string[]
 }
 
-const SECTION = /^(?:\p{Extended_Pictographic}\uFE0F?\s*)*(ingredientes|preparaci[oó]n|pasos|elaboraci[oó]n|instrucciones)\s*:?$/iu
+const SECTION = /^(?:\p{Extended_Pictographic}\uFE0F?\s*)*(ingredientes|preparaci[oó]n|pasos|elaboraci[oó]n|instrucciones)\s*[:;]?$/iu
 const BULLET = /^(?:[-•*·]|\p{Extended_Pictographic}\uFE0F?)+\s*/u
 const NUMBERED = /^(?:paso\s*)?\d+\s*[.)º:-]\s*/i
 

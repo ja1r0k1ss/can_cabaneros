@@ -1,9 +1,9 @@
 // Run with: npm test (Node 24 strips the TypeScript types natively)
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { deductFromPantry, mergeItems } from '../src/lib/pantry.ts'
-import { parseIngredientLine, shortfall, stepSeconds } from '../src/lib/recipes.ts'
-import type { PantryItem } from '../src/types/inventory.ts'
+import { deductFromPantry, mergeItems } from '../src/lib/pantry.js'
+import { parseIngredientLine, shortfall, stepSeconds } from '../src/lib/recipes.js'
+import type { PantryItem } from '../src/types/inventory.js'
 
 const pantry: PantryItem[] = [
   { id: '1', nombre: 'Aceite de oliva virgen extra', categoria: 'Salsas/Aceites', cantidad: 750, unidad: 'ml' },
@@ -74,11 +74,11 @@ test('stepSeconds', () => {
   assert.equal(stepSeconds('Añade 2 huevos'), null)
 })
 
-import { adaptRecipe, adaptationsFor } from '../src/lib/adapt.ts'
-import { splitByTechniques } from '../src/lib/techniques.ts'
-import { inferUtensils, parseRecipeText } from '../src/lib/recipes.ts'
-import type { Utensil } from '../src/types/inventory.ts'
-import type { Recipe } from '../src/types/recipe.ts'
+import { adaptRecipe, adaptationsFor } from '../src/lib/adapt.js'
+import { splitByTechniques } from '../src/lib/techniques.js'
+import { inferUtensils, parseRecipeText } from '../src/lib/recipes.js'
+import type { Utensil } from '../src/types/inventory.js'
+import type { Recipe } from '../src/types/recipe.js'
 
 test('parseRecipeText reads a caption with emoji headers, bullets, meta and chatter', () => {
   const r = parseRecipeText(`POLLO ASADO 🍗
@@ -150,7 +150,7 @@ test('adaptRecipe rewrites steps for slow cooker and airfryer', () => {
   assert.deepEqual(air.utensilios, ['Sartén', 'Airfryer'])
 })
 
-import { buildImport, cleanTitle, detectPlatform, guessIngredients } from '../src/lib/recipeImport.ts'
+import { buildImport, cleanTitle, detectPlatform, guessIngredients } from '../src/lib/recipeImport.js'
 
 test('buildImport reads a one-line TikTok caption into a full recipe', () => {
   const caption =
@@ -191,8 +191,8 @@ test('import helpers', () => {
   assert.deepEqual(guessIngredients('pasta con tomate frito y queso'), ['queso', 'pasta', 'tomate frito'])
 })
 
-import { isOptional, splitByChanges, substitutesFor } from '../src/lib/substitutes.ts'
-import { scaleRecipe } from '../src/lib/recipes.ts'
+import { isOptional, splitByChanges, substitutesFor } from '../src/lib/substitutes.js'
+import { scaleRecipe } from '../src/lib/recipes.js'
 
 test('scaleRecipe multiplies quantities with sensible rounding', () => {
   const base: Recipe = {
@@ -244,8 +244,8 @@ test('splitByChanges marks ingredient mentions accent- and plural-insensitively'
   assert.deepEqual(splitByChanges('Hornea 40 min', changes), ['Hornea 40 min'])
 })
 
-import { arrayOf, isShoppingItem, readStored, servingsMap, writeStored, type KVStorage } from '../src/lib/storage.ts'
-import type { ShoppingItem } from '../src/types/inventory.ts'
+import { arrayOf, isShoppingItem, readStored, servingsMap, writeStored, type KVStorage } from '../src/lib/storage.js'
+import type { ShoppingItem } from '../src/types/inventory.js'
 
 const fakeStorage = (init: Record<string, string> = {}): KVStorage & { data: Record<string, string> } => ({
   data: { ...init },
@@ -284,7 +284,7 @@ test('readStored: roundtrip, salvage of bad items, corrupt backup, blocked stora
   assert.deepEqual(servingsMap({ r1: 4 }), { r1: 4 })
 })
 
-import { canonicalTikTokUrl, extractTikTokItem, parseTikTokUrl, pickRecipeComments, vttToText } from '../api/_sources.ts'
+import { canonicalTikTokUrl, extractTikTokItem, parseTikTokUrl, pickRecipeComments, vttToText } from '../api/_sources.js'
 
 test('TikTok source parsers', () => {
   assert.deepEqual(parseTikTokUrl('https://www.tiktok.com/@cocina_ana/video/7412345678901234567?is_from_webapp=1'), { author: 'cocina_ana', id: '7412345678901234567' })
@@ -338,7 +338,7 @@ test('TikTok source parsers', () => {
   assert.deepEqual(pickRecipeComments({ status_code: 10201 }, 'x'), [])
 })
 
-import { parseSpokenRecipe } from '../src/lib/recipeImport.ts'
+import { parseSpokenRecipe } from '../src/lib/recipeImport.js'
 
 test('parseSpokenRecipe turns a spoken transcript into ingredients and steps', () => {
   const t =
@@ -358,5 +358,64 @@ test('parseSpokenRecipe turns a spoken transcript into ingredients and steps', (
     'Sofríe la cebolla con un chorrito de aceite durante diez minutos.',
     'Añade las lentejas y el caldo.',
     'Deja que cueza unos 45 minutos.',
+  ])
+})
+
+// Real post (vm.tiktok.com/ZN8ADa7Cm): one-line caption with "Ingredientes;" and " - " bullets, plus TikTok's auto-captions
+const SALCHICHAS_CAPTION =
+  '🧅🐽Salchichas encebolladas, una receta fácil y riquísima Ingredientes; - 12 Salchichas - 2 cebollas grandes  - 3 dientes de ajo - Sal - Aceite de oliva  - 1 cdita de pimentón picante - Pimienta  - Tomillo al gusto - 2 cditas de pulpa de ñora ( se puede sustituir por tomate concentrado) - 1 buen chorro de vino blanco #cocina #receta #recetasfaciles #salchicha #salchichas '
+const SALCHICHAS_AUDIO = `Si no sabes qué comer o cenar,
+prepárate estas salchichas encebolladas
+porque están brutales.
+Son fáciles,
+rápidas y con ingredientes que todos tenemos en casa.
+Y para hacerlas
+empezaremos
+marcando las salchichas con 1 poco de aceite de oliva,
+cuando estén, las sacamos y doramos los ajos
+y cuando se empiecen a dorar,
+añadimos la cebolla cortada a Juliana,
+salamos ligeramente y dejamos cocinar
+tapada hasta que se poche bien.
+Cuando se empiece a caramelizar, añadimos el pimentón picante,
+la pimienta negra y el tomillo y cocinamos 1 par de minutos.
+Ahora añadimos 2 cucharaditas de carne de ñora,
+también podéis poner tomate concentrado,
+si no tenéis, reincorporamos las salchichas,
+cocinamos 10 minutos con 1 buen chorro de vino Blanco
+y ya estarán listas
+para disfrutar`
+
+test('real TikTok caption: semicolon header, inline dash bullets, household measures', () => {
+  const { recipe, completa } = buildImport('https://www.tiktok.com/@danieleandome/video/7638997704512703766', { texto: SALCHICHAS_CAPTION })
+  assert.equal(recipe.titulo, 'Salchichas encebolladas, una receta fácil y riquísima')
+  assert.deepEqual(
+    recipe.ingredientes.map((i) => [i.cantidad, i.unidad, i.nombre]),
+    [
+      [12, 'ud', 'Salchichas'],
+      [2, 'ud', 'cebollas grandes'],
+      [3, 'ud', 'dientes de ajo'],
+      [undefined, undefined, 'Sal'],
+      [undefined, undefined, 'Aceite de oliva'],
+      [5, 'ml', 'pimentón picante'],
+      [undefined, undefined, 'Pimienta'],
+      [undefined, undefined, 'Tomillo'],
+      [10, 'ml', 'pulpa de ñora'],
+      [undefined, undefined, 'vino blanco'],
+    ],
+  )
+  assert.ok(!completa, 'the caption has no steps: those come from the audio')
+})
+
+test('real TikTok auto-captions: steps from unpunctuated spoken fragments', () => {
+  assert.deepEqual(parseSpokenRecipe(SALCHICHAS_AUDIO).pasos, [
+    'Marcando las salchichas con 1 poco de aceite de oliva.',
+    'Cuando estén, las sacamos y doramos los ajos.',
+    'Cuando se empiecen a dorar, añadimos la cebolla cortada a Juliana.',
+    'Salamos ligeramente y dejamos cocinar tapada hasta que se poche bien.',
+    'Cuando se empiece a caramelizar, añadimos el pimentón picante, la pimienta negra y el tomillo y cocinamos 1 par de minutos.',
+    'Añadimos 2 cucharaditas de carne de ñora, también podéis poner tomate concentrado, si no tenéis.',
+    'Reincorporamos las salchichas.',
+    'Cocinamos 10 minutos con 1 buen chorro de vino Blanco.',
   ])
 })

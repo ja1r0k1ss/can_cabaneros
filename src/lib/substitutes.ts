@@ -1,6 +1,6 @@
-import { OPTIONAL_INGREDIENTS, SUBSTITUTES } from '../data/substitutes.ts'
+import { OPTIONAL_INGREDIENTS, SUBSTITUTES } from '../data/substitutes.js'
 import type { PantryItem } from '../types/inventory'
-import { matchesName, shortfall, words } from './recipes.ts'
+import { matchesName, shortfall, words } from './recipes.js'
 
 /** Spice/herb/condiment that can be left out without changing the base of the dish */
 export const isOptional = (nombre: string) => OPTIONAL_INGREDIENTS.some((o) => matchesName(o, nombre))

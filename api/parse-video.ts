@@ -1,9 +1,9 @@
-import { buildImport, detectPlatform, parseSpokenRecipe } from '../src/lib/recipeImport.ts'
-import { inferUtensils, isBasicIngredient } from '../src/lib/recipes.ts'
-import { newId } from '../src/lib/utils.ts'
-import type { ParseVideoResponse, Recipe } from '../src/types/recipe.ts'
-import { fetchInstagramSources, fetchTikTokSources, fetchYouTubeSources, type VideoSources } from './_sources.ts'
-import { structureWithClaude, type ExtractedRecipe } from './_structure.ts'
+import { buildImport, detectPlatform, parseSpokenRecipe } from '../src/lib/recipeImport.js'
+import { inferUtensils, isBasicIngredient } from '../src/lib/recipes.js'
+import { newId } from '../src/lib/utils.js'
+import type { ParseVideoResponse, Recipe } from '../src/types/recipe.js'
+import { fetchInstagramSources, fetchTikTokSources, fetchYouTubeSources, type VideoSources } from './_sources.js'
+import { structureWithClaude, type ExtractedRecipe } from './_structure.js'
 
 function fromClaude(url: string, r: ExtractedRecipe): Omit<Recipe, 'id'> {
   const ingredientes = r.ingredientes
