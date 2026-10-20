@@ -1,6 +1,6 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 /** Serves api/*.ts (Vercel functions) under `npm run dev`, so the importer works locally without `vercel dev` */
@@ -8,6 +8,8 @@ function devApi(): Plugin {
   return {
     name: 'dev-api',
     configureServer(server) {
+      // GROQ_API_KEY / ANTHROPIC_API_KEY from .env.local (gitignored), like Vercel's project env vars in production
+      for (const [k, v] of Object.entries(loadEnv(server.config.mode, process.cwd(), ''))) process.env[k] ??= v
       server.middlewares.use('/api/parse-video', async (req, res) => {
         try {
           const chunks: Buffer[] = []

@@ -1,4 +1,4 @@
-import { buildImport, detectPlatform } from '../src/lib/recipeImport.ts'
+import { buildImport, detectPlatform, parseSpokenRecipe } from '../src/lib/recipeImport.ts'
 import { inferUtensils, isBasicIngredient } from '../src/lib/recipes.ts'
 import { newId } from '../src/lib/utils.ts'
 import type { ParseVideoResponse, Recipe } from '../src/types/recipe.ts'
@@ -55,10 +55,18 @@ export async function POST(request: Request): Promise<Response> {
     completa = recipe.ingredientes.length > 0 && recipe.pasos.length > 0
     if (extracted.motivoRevision) avisos.push(extracted.motivoRevision)
   } else {
-    // no AI available (or it found no recipe): line-based parser over every source, description first
-    const draft = buildImport(url, { titulo: sources.titulo, texto: [sources.descripcion, ...sources.comentarios, sources.transcripcion].filter(Boolean).join('\n\n') })
+    // no AI available (or it found no recipe): line-based parser over the written sources,
+    // then the spoken transcript fills whatever is still missing
+    const draft = buildImport(url, { titulo: sources.titulo, texto: [sources.descripcion, ...sources.comentarios].filter(Boolean).join('\n\n') })
     recipe = { ...draft.recipe, revisar: !draft.completa || draft.ingredientesDeducidos }
-    completa = draft.completa
+    const spoken = sources.transcripcion ? parseSpokenRecipe(sources.transcripcion) : null
+    if (spoken && (draft.ingredientesDeducidos || !recipe.ingredientes.length) && spoken.ingredientes.length) {
+      recipe = { ...recipe, ingredientes: spoken.ingredientes, revisar: true }
+    }
+    if (spoken && !recipe.pasos.length && spoken.pasos.length) {
+      recipe = { ...recipe, pasos: spoken.pasos, utensilios: inferUtensils(spoken.pasos), revisar: true }
+    }
+    completa = recipe.ingredientes.length > 0 && recipe.pasos.length > 0
     if (extracted && !extracted.esReceta) avisos.push('El vídeo no parece contener una receta.')
   }
   if (!hasText && !avisos.length) avisos.push('El vídeo no tiene descripción, comentarios del creador ni subtítulos que leer.')

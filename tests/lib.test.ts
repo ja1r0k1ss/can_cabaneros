@@ -297,7 +297,9 @@ test('TikTok source parsers', () => {
           itemStruct: {
             desc: 'Lentejas 🥣 Ingredientes: 300 g de lentejas',
             author: { uniqueId: 'cocina_ana' },
+            music: { original: true, playUrl: 'https://v45.tiktokcdn-eu.com/audio.mp3' },
             video: {
+              playAddr: 'https://attacker.example.com/v.mp4',
               claInfo: { captionInfos: [{ language: 'eng-US', url: 'https://v16.tiktokcdn.com/en.vtt' }, { language: 'spa-ES', url: 'https://v16.tiktokcdn.com/es.vtt' }] },
               subtitleInfos: [{ LanguageCodeName: 'fra-FR', Url: 'javascript:alert(1)' }],
             },
@@ -311,7 +313,9 @@ test('TikTok source parsers', () => {
     desc: 'Lentejas 🥣 Ingredientes: 300 g de lentejas',
     author: 'cocina_ana',
     captionUrls: ['https://v16.tiktokcdn.com/es.vtt', 'https://v16.tiktokcdn.com/en.vtt'],
-  }, 'Spanish track first, non-https dropped')
+    audioUrl: 'https://v45.tiktokcdn-eu.com/audio.mp3',
+    videoUrl: undefined,
+  }, 'Spanish track first, non-https and non-TikTok hosts dropped')
   assert.equal(extractTikTokItem('<html>login wall</html>'), null)
 
   assert.equal(
@@ -328,4 +332,27 @@ test('TikTok source parsers', () => {
   }
   assert.deepEqual(pickRecipeComments(comments, 'cocina_ana'), ['Receta: 300 g lentejas, 1 cebolla...', 'Fijado: pasos en la descripción'])
   assert.deepEqual(pickRecipeComments({ status_code: 10201 }, 'x'), [])
+})
+
+import { parseSpokenRecipe } from '../src/lib/recipeImport.ts'
+
+test('parseSpokenRecipe turns a spoken transcript into ingredients and steps', () => {
+  const t =
+    'Hola a todos, hoy hacemos unas lentejas de la abuela. Necesitas 300 gramos de lentejas, una cebolla, dos dientes de ajo, un litro de caldo y una cucharada de pimentón. ' +
+    'Primero pica la cebolla muy finita. Luego sofríe la cebolla con un chorrito de aceite durante diez minutos. Añade las lentejas y el caldo. ' +
+    'Deja que cueza unos 45 minutos. ¡Y a disfrutar, dale like!'
+  const { ingredientes, pasos } = parseSpokenRecipe(t)
+  const byName = Object.fromEntries(ingredientes.map((i) => [i.nombre, [i.cantidad, i.unidad]]))
+  assert.deepEqual(byName['lentejas'], [300, 'g'])
+  assert.deepEqual(byName['cebolla'], [1, 'ud'])
+  assert.deepEqual(byName['ajo'], [2, 'ud'])
+  assert.deepEqual(byName['caldo'], [1, 'l'])
+  assert.deepEqual(byName['pimentón'], [15, 'ml'])
+  assert.ok(!ingredientes.some((i) => /minutos|chorrito/.test(i.nombre)), 'no times or vague amounts as ingredients')
+  assert.deepEqual(pasos, [
+    'Pica la cebolla muy finita.',
+    'Sofríe la cebolla con un chorrito de aceite durante diez minutos.',
+    'Añade las lentejas y el caldo.',
+    'Deja que cueza unos 45 minutos.',
+  ])
 })

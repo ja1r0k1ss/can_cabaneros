@@ -27,6 +27,20 @@ export interface TikTokItem {
   author?: string
   /** Caption track URLs, Spanish first */
   captionUrls: string[]
+  /** The video's own sound as MP3 ("sonido original"), downloadable without cookies */
+  audioUrl?: string
+  /** Video MP4; needs the cookies TikTok sets on the page response */
+  videoUrl?: string
+}
+
+// caption/audio/video files live on TikTok's CDNs; any other host in the payload is ignored
+export const isTikTokCdn = (url: string) => {
+  try {
+    const u = new URL(url)
+    return u.protocol === 'https:' && /(^|\.)(tiktok|tiktokcdn|tiktokcdn-eu|tiktokcdn-us|byteoversea|ibytedtos|muscdn)\.(com|net)$/.test(u.hostname)
+  } catch {
+    return false
+  }
 }
 
 /** Reads the video data TikTok embeds in its page (`__UNIVERSAL_DATA_FOR_REHYDRATION__`) */
@@ -54,10 +68,15 @@ export function extractTikTokItem(html: string): TikTokItem | null {
     }))
     .filter((t): t is { url: string; lang: string } => !!t.url && /^https:\/\//.test(t.url))
     .sort((a, b) => Number(b.lang.startsWith('spa') || b.lang.startsWith('es')) - Number(a.lang.startsWith('spa') || a.lang.startsWith('es')))
+  const music = isObj(item.music) ? item.music : {}
+  const audioUrl = music.original === true ? str(music.playUrl) : undefined
+  const videoUrl = str(video.playAddr) || str(video.downloadAddr)
   return {
     desc: str(item.desc),
     author: isObj(item.author) ? str(item.author.uniqueId) : undefined,
     captionUrls: tracks.map((t) => t.url),
+    audioUrl: audioUrl && isTikTokCdn(audioUrl) ? audioUrl : undefined,
+    videoUrl: videoUrl && isTikTokCdn(videoUrl) ? videoUrl : undefined,
   }
 }
 
@@ -111,7 +130,11 @@ export async function fetchTikTokSources(rawUrl: string): Promise<VideoSources> 
   const { id, author: urlAuthor } = parseTikTokUrl(url)
 
   const [page, oembed, comments] = await Promise.allSettled([
-    get(url).then((r) => r.text()).then(extractTikTokItem),
+    get(url).then(async (r) => ({
+      item: extractTikTokItem(await r.text()),
+      // session cookies (tt_chain_token…) the CDN asks for when downloading the video
+      cookie: r.headers.getSetCookie().map((c) => c.split(';')[0]).join('; '),
+    })),
     get(`https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`).then((r) => r.json()).then((d: unknown) => (isObj(d) ? str(d.title) : undefined)),
     id
       ? get(`https://www.tiktok.com/api/comment/list/?aid=1988&aweme_id=${id}&count=50&cursor=0`, { headers: { Referer: 'https://www.tiktok.com/' } })
@@ -120,17 +143,32 @@ export async function fetchTikTokSources(rawUrl: string): Promise<VideoSources> 
       : Promise.resolve([] as string[]),
   ])
 
-  const item = page.status === 'fulfilled' ? page.value : null
+  const item = page.status === 'fulfilled' ? page.value.item : null
+  const cookie = page.status === 'fulfilled' ? page.value.cookie : ''
   let transcripcion: string | undefined
   for (const captionUrl of item?.captionUrls ?? []) {
+    if (!isTikTokCdn(captionUrl)) continue
     try {
-      const host = new URL(captionUrl).hostname
-      // caption files live on TikTok's CDNs; anything else in the payload is ignored
-      if (!/(tiktok|tiktokcdn|byteoversea|ibytedtos|muscdn)[\w.-]*\.(com|net)$/.test(host)) continue
       transcripcion = vttToText(await (await get(captionUrl)).text()) || undefined
       if (transcripcion) break
     } catch {
       // next track
+    }
+  }
+  // no captions: transcribe the audio ourselves (original-sound MP3 is ~10x smaller than the MP4)
+  if (!transcripcion && item && process.env.GROQ_API_KEY) {
+    for (const [mediaUrl, withCookie] of [
+      [item.audioUrl, false],
+      [item.videoUrl, true],
+    ] as const) {
+      if (!mediaUrl) continue
+      try {
+        const media = await downloadMedia(mediaUrl, withCookie ? cookie : undefined)
+        transcripcion = await transcribeWithGroq(media)
+        if (transcripcion) break
+      } catch (error) {
+        console.error('[parse-video] audio transcription failed', error)
+      }
     }
   }
 
@@ -166,4 +204,42 @@ export async function fetchInstagramSources(url: string): Promise<VideoSources> 
   // og:description looks like `123 likes, 4 comments - user on date: "caption"`
   const caption = og && decodeEntities(og).replace(/^[^:]*:\s*"?/, '').replace(/"\.?$/, '')
   return { descripcion: caption || undefined, comentarios: [] }
+}
+
+// Groq's free tier accepts uploads up to 25 MB
+const MAX_MEDIA_BYTES = 24 * 1024 * 1024
+
+/** Downloads TikTok audio/video into memory, refusing anything over the transcription upload limit */
+export async function downloadMedia(url: string, cookie?: string): Promise<Blob> {
+  if (!isTikTokCdn(url)) throw new Error('media URL outside TikTok CDNs')
+  const res = await fetch(url, {
+    headers: { 'User-Agent': UA, Referer: 'https://www.tiktok.com/', ...(cookie ? { Cookie: cookie } : {}) },
+    signal: AbortSignal.timeout(20_000),
+  })
+  if (!res.ok) throw new Error(`media download HTTP ${res.status}`)
+  if (Number(res.headers.get('content-length')) > MAX_MEDIA_BYTES) throw new Error('media too large to transcribe')
+  const buf = await res.arrayBuffer()
+  if (buf.byteLength > MAX_MEDIA_BYTES) throw new Error('media too large to transcribe')
+  return new Blob([buf], { type: res.headers.get('content-type') ?? 'video/mp4' })
+}
+
+/**
+ * Speech-to-text with Whisper large-v3 on Groq (free plan: 2,000 requests and 8 h of audio per day, 25 MB per file).
+ * No language is forced so non-Spanish videos still transcribe correctly; the prompt only biases cooking vocabulary.
+ */
+export async function transcribeWithGroq(media: Blob): Promise<string | undefined> {
+  const form = new FormData()
+  form.append('file', media, media.type.includes('mpeg') ? 'audio.mp3' : 'video.mp4')
+  form.append('model', 'whisper-large-v3')
+  form.append('response_format', 'text')
+  form.append('temperature', '0')
+  form.append('prompt', 'Receta de cocina: ingredientes, gramos, cucharadas, sartén, horno, sofríe, añade, mezcla.')
+  const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+    body: form,
+    signal: AbortSignal.timeout(30_000),
+  })
+  if (!res.ok) throw new Error(`Groq transcription HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
+  return (await res.text()).trim() || undefined
 }
