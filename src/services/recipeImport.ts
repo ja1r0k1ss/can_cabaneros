@@ -53,12 +53,16 @@ export async function importFromUrl(url: string): Promise<UrlImportResult> {
 
 export type ImportResult = ParseVideoResponse
 
+/** Import failure the UI should answer with the "paste the text" rescue */
+export class ImportError extends Error {}
+
 /**
- * Server pipeline first (description + creator comments + audio transcript, merged by Claude). When the function
- * isn't reachable (static hosting, `vite preview`, offline) falls back to what the browser can read on its own.
+ * Server pipeline first (description + creator comments + audio transcript). Only when the function doesn't exist
+ * (static hosting, `vite preview`: 404 or HTML) does it fall back to what the browser can read on its own; a server
+ * that answered with an error or timed out is reported, never silently swapped for a weaker result.
  */
 export async function importRecipe(url: string): Promise<ImportResult> {
-  let res: Response | undefined
+  let res: Response
   try {
     res = await fetch('/api/parse-video', {
       method: 'POST',
@@ -66,12 +70,18 @@ export async function importRecipe(url: string): Promise<ImportResult> {
       body: JSON.stringify({ url }),
       signal: AbortSignal.timeout(70_000),
     })
-  } catch {
-    res = undefined
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'TimeoutError') throw new ImportError('El análisis del vídeo tardó demasiado.')
+    return importInBrowser(url) // offline / no server
   }
-  if (res?.status === 400) throw new Error(((await res.json()) as { error?: string }).error ?? 'Enlace no válido')
-  if (res?.ok && res.headers.get('content-type')?.includes('application/json')) return (await res.json()) as ImportResult
+  const isJson = res.headers.get('content-type')?.includes('application/json')
+  if (res.ok && isJson) return (await res.json()) as ImportResult
+  if (isJson) throw new ImportError(((await res.json()) as { error?: string }).error ?? `Error ${res.status} al analizar el vídeo.`)
+  if (res.status === 404 || res.ok) return importInBrowser(url) // no function deployed: an HTML page answered
+  throw new ImportError(`El servidor respondió con un error (${res.status}).`)
+}
 
+async function importInBrowser(url: string): Promise<ImportResult> {
   const local = await importFromUrl(url)
   return {
     recipe: { ...local.recipe, revisar: !local.completa || local.ingredientesDeducidos },

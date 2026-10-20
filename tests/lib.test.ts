@@ -284,11 +284,15 @@ test('readStored: roundtrip, salvage of bad items, corrupt backup, blocked stora
   assert.deepEqual(servingsMap({ r1: 4 }), { r1: 4 })
 })
 
-import { extractTikTokItem, parseTikTokUrl, pickRecipeComments, vttToText } from '../api/_sources.ts'
+import { canonicalTikTokUrl, extractTikTokItem, parseTikTokUrl, pickRecipeComments, vttToText } from '../api/_sources.ts'
 
 test('TikTok source parsers', () => {
   assert.deepEqual(parseTikTokUrl('https://www.tiktok.com/@cocina_ana/video/7412345678901234567?is_from_webapp=1'), { author: 'cocina_ana', id: '7412345678901234567' })
-  assert.deepEqual(parseTikTokUrl('https://vm.tiktok.com/ZMabc/'), { author: undefined, id: undefined })
+  assert.deepEqual(parseTikTokUrl('https://vm.tiktok.com/ZMabc/'), { id: undefined })
+  assert.deepEqual(parseTikTokUrl('https://www.tiktok.com/@/video/123?_r=1'), { author: undefined, id: '123' }, 'mobile redirect has no handle')
+  assert.deepEqual(parseTikTokUrl('https://www.tiktok.com/@_/video/123'), { author: undefined, id: '123' })
+  assert.deepEqual(parseTikTokUrl('https://m.tiktok.com/v/123.html'), { id: '123' })
+  assert.equal(canonicalTikTokUrl('123'), 'https://www.tiktok.com/@_/video/123')
 
   const json = JSON.stringify({
     __DEFAULT_SCOPE__: {

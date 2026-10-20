@@ -26,6 +26,16 @@ function fromClaude(url: string, r: ExtractedRecipe): Omit<Recipe, 'id'> {
 
 /** POST { url } → recipe merged from the post description, creator/pinned comments and the audio transcript */
 export async function POST(request: Request): Promise<Response> {
+  try {
+    return await parseVideo(request)
+  } catch (error) {
+    // never leave the PWA waiting on an unhandled crash: always answer JSON it can show
+    console.error('[parse-video] unexpected error', error)
+    return Response.json({ error: 'Error interno al analizar el vídeo.' }, { status: 500 })
+  }
+}
+
+async function parseVideo(request: Request): Promise<Response> {
   let url = ''
   try {
     const body: unknown = await request.json()
@@ -33,19 +43,27 @@ export async function POST(request: Request): Promise<Response> {
   } catch {
     // invalid JSON → treated as missing url
   }
+  // the app shares "Mira este vídeo https://vt.tiktok.com/…": keep just the link
+  url = url.match(/https?:\/\/\S+/)?.[0] ?? url
+  console.log(`[parse-video] received: ${url}`)
   const platform = url.length <= 500 ? detectPlatform(url) : null
   if (!platform) return Response.json({ error: 'Enlace no válido. Usa un enlace de TikTok, Instagram o YouTube.' }, { status: 400 })
 
   const avisos: string[] = []
-  let sources: VideoSources = { comentarios: [] }
+  let sources: VideoSources
   try {
     sources = await (platform === 'TikTok' ? fetchTikTokSources(url) : platform === 'YouTube' ? fetchYouTubeSources(url) : fetchInstagramSources(url))
   } catch (error) {
-    console.error('[parse-video] fetching sources failed', error)
-    avisos.push('No se pudo leer el vídeo (privado, eliminado o bloqueado temporalmente).')
+    // unresolvable link (expired short link, redirect off TikTok, video gone): tell the app instead of a blank recipe
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(`[parse-video] fetching sources failed: ${message}`)
+    return Response.json({ error: message.startsWith('El enlace') ? message : 'No se pudo leer el vídeo (privado, eliminado o bloqueado temporalmente).' }, { status: 422 })
   }
 
   const hasText = !!(sources.descripcion?.trim() || sources.comentarios.length || sources.transcripcion?.trim())
+  console.log(
+    `[parse-video] sources: description ${sources.descripcion?.length ?? 0} chars, ${sources.comentarios.length} comments, transcript ${sources.transcripcion?.length ?? 0} chars · Claude ${process.env.ANTHROPIC_API_KEY ? 'enabled' : 'not configured'}`,
+  )
   const extracted = hasText && process.env.ANTHROPIC_API_KEY ? await structureWithClaude(sources) : null
 
   let recipe: Recipe
@@ -78,5 +96,6 @@ export async function POST(request: Request): Promise<Response> {
     completa,
     avisos,
   }
+  console.log(`[parse-video] done: motor=${payload.motor}, ${recipe.ingredientes.length} ingredients, ${recipe.pasos.length} steps, revisar=${!!recipe.revisar}`)
   return Response.json(payload)
 }

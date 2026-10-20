@@ -16,11 +16,16 @@ export interface VideoSources {
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null
 const str = (x: unknown) => (typeof x === 'string' ? x : undefined)
 
-/** TikTok video id and author handle from a canonical URL (/@user/video/123) */
+/** TikTok video id and author handle: /@user/video/123, /@/video/123 (mobile redirect, no author) or /v/123.html */
 export function parseTikTokUrl(url: string): { id?: string; author?: string } {
-  const m = new URL(url).pathname.match(/^\/@([^/]+)\/(?:video|photo)\/(\d+)/)
-  return { author: m?.[1], id: m?.[2] }
+  const path = new URL(url).pathname
+  const m = path.match(/^\/@([^/]*)\/(?:video|photo)\/(\d+)/)
+  if (m) return { author: m[1] && m[1] !== '_' ? m[1] : undefined, id: m[2] }
+  return { id: path.match(/^\/v\/(\d+)\.html/)?.[1] }
 }
+
+/** Canonical page URL from the id alone: TikTok serves the video whatever the handle segment says */
+export const canonicalTikTokUrl = (id: string, author?: string) => `https://www.tiktok.com/@${author ?? '_'}/video/${id}`
 
 export interface TikTokItem {
   desc?: string
@@ -110,15 +115,28 @@ async function get(url: string, init: RequestInit = {}) {
 
 const isTikTokHost = (u: URL) => /(^|\.)tiktok\.com$/.test(u.hostname)
 
-/** Expands vm./vt.tiktok.com short links, refusing redirects that leave tiktok.com */
-export async function resolveTikTokUrl(url: string): Promise<string> {
-  if (parseTikTokUrl(url).id) return url
-  const res = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(TIMEOUT) })
-  const location = res.headers.get('location')
-  if (!location) throw new Error('El enlace corto de TikTok no redirige a ningún vídeo')
-  const target = new URL(location, url)
-  if (!isTikTokHost(target)) throw new Error('El enlace corto no apunta a tiktok.com')
-  return target.origin + target.pathname
+const MAX_REDIRECTS = 5
+
+/**
+ * Resolves any TikTok link (vt./vm. short links from "Copiar enlace", m.tiktok.com, canonical) to its video id.
+ * Redirects are followed hop by hop instead of `redirect: 'follow'` so every hop is checked to stay on tiktok.com
+ * before it's requested. Expired short links land on the home page: reported as an error, not a blank recipe.
+ */
+export async function resolveTikTokUrl(url: string): Promise<{ url: string; id: string; author?: string }> {
+  let current = url
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    const parsed = parseTikTokUrl(current)
+    if (parsed.id) return { ...parsed, id: parsed.id, url: canonicalTikTokUrl(parsed.id, parsed.author) }
+    const res = await fetch(current, { redirect: 'manual', headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(TIMEOUT) })
+    await res.body?.cancel()
+    const location = res.headers.get('location')
+    console.log(`[parse-video] resolve hop ${hop}: ${current} → HTTP ${res.status}${location ? ` → ${location}` : ''}`)
+    if (!location) break
+    const next = new URL(location, current)
+    if (!isTikTokHost(next)) throw new Error('El enlace redirige fuera de tiktok.com')
+    current = next.href
+  }
+  throw new Error('El enlace de TikTok no lleva a ningún vídeo (puede haber caducado o ser privado).')
 }
 
 /**
@@ -126,22 +144,29 @@ export async function resolveTikTokUrl(url: string): Promise<string> {
  * parallel; captions need the track URLs from the page. Every source is best-effort: one failing never sinks the rest.
  */
 export async function fetchTikTokSources(rawUrl: string): Promise<VideoSources> {
-  const url = await resolveTikTokUrl(rawUrl)
-  const { id, author: urlAuthor } = parseTikTokUrl(url)
+  const { url, id, author: urlAuthor } = await resolveTikTokUrl(rawUrl)
+  console.log(`[parse-video] resolved: ${rawUrl} → ${url}`)
 
+  const pagePromise = get(url).then(async (r) => ({
+    item: extractTikTokItem(await r.text()),
+    // session cookies (tt_chain_token…) the CDN asks for when downloading the video
+    cookie: r.headers.getSetCookie().map((c) => c.split(';')[0]).join('; '),
+  }))
   const [page, oembed, comments] = await Promise.allSettled([
-    get(url).then(async (r) => ({
-      item: extractTikTokItem(await r.text()),
-      // session cookies (tt_chain_token…) the CDN asks for when downloading the video
-      cookie: r.headers.getSetCookie().map((c) => c.split(';')[0]).join('; '),
-    })),
+    pagePromise,
     get(`https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`).then((r) => r.json()).then((d: unknown) => (isObj(d) ? str(d.title) : undefined)),
-    id
-      ? get(`https://www.tiktok.com/api/comment/list/?aid=1988&aweme_id=${id}&count=50&cursor=0`, { headers: { Referer: 'https://www.tiktok.com/' } })
-          .then((r) => r.json())
-          .then((d: unknown) => pickRecipeComments(d, urlAuthor))
-      : Promise.resolve([] as string[]),
+    // short links often carry no handle: then wait for the page to know who the creator is
+    (urlAuthor ? Promise.resolve(urlAuthor) : pagePromise.then((p) => p.item?.author, () => undefined)).then((author) =>
+      get(`https://www.tiktok.com/api/comment/list/?aid=1988&aweme_id=${id}&count=50&cursor=0`, { headers: { Referer: 'https://www.tiktok.com/' } })
+        .then((r) => r.json())
+        .then((d: unknown) => pickRecipeComments(d, author)),
+    ),
   ])
+  const why = (r: PromiseSettledResult<unknown>) => (r.status === 'rejected' ? `error: ${r.reason instanceof Error ? r.reason.message : r.reason}` : 'ok')
+  console.log(
+    `[parse-video] page ${why(page)}${page.status === 'fulfilled' ? ` (video data: ${page.value.item ? 'yes' : 'no'}, captions: ${page.value.item?.captionUrls.length ?? 0}, audio: ${page.value.item?.audioUrl ? 'mp3' : page.value.item?.videoUrl ? 'mp4' : 'none'})` : ''}` +
+      ` · oEmbed ${why(oembed)} · comments ${why(comments)}${comments.status === 'fulfilled' ? ` (${comments.value.length} useful)` : ''}`,
+  )
 
   const item = page.status === 'fulfilled' ? page.value.item : null
   const cookie = page.status === 'fulfilled' ? page.value.cookie : ''
@@ -156,6 +181,7 @@ export async function fetchTikTokSources(rawUrl: string): Promise<VideoSources> 
     }
   }
   // no captions: transcribe the audio ourselves (original-sound MP3 is ~10x smaller than the MP4)
+  if (!transcripcion && item && !process.env.GROQ_API_KEY) console.log('[parse-video] Groq: skipped, GROQ_API_KEY not set')
   if (!transcripcion && item && process.env.GROQ_API_KEY) {
     for (const [mediaUrl, withCookie] of [
       [item.audioUrl, false],
@@ -163,11 +189,13 @@ export async function fetchTikTokSources(rawUrl: string): Promise<VideoSources> 
     ] as const) {
       if (!mediaUrl) continue
       try {
+        const started = Date.now()
         const media = await downloadMedia(mediaUrl, withCookie ? cookie : undefined)
         transcripcion = await transcribeWithGroq(media)
+        console.log(`[parse-video] Groq: ok (${withCookie ? 'mp4' : 'mp3'}, ${Math.round(media.size / 1024)} KB, ${Date.now() - started} ms, ${transcripcion?.length ?? 0} chars)`)
         if (transcripcion) break
       } catch (error) {
-        console.error('[parse-video] audio transcription failed', error)
+        console.error(`[parse-video] Groq: failed on ${withCookie ? 'mp4' : 'mp3'}`, error instanceof Error ? error.message : error)
       }
     }
   }

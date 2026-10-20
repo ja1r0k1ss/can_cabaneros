@@ -53,6 +53,8 @@ function UrlImport() {
   const [error, setError] = useState('')
   const [result, setResult] = useState<ImportResult | null>(null)
   const [toast, setToast] = useState('')
+  // set when automatic import failed: the editor opens empty, straight on "paste the text"
+  const [manual, setManual] = useState<Recipe | null>(null)
   const platform = detectPlatform(url.trim())
 
   useEffect(() => {
@@ -64,6 +66,7 @@ function UrlImport() {
   async function run(link: string) {
     setError('')
     setResult(null)
+    setManual(null)
     setLoading(true)
     try {
       const r = await importRecipe(link)
@@ -74,7 +77,7 @@ function UrlImport() {
         setToast('¡Receta extraída e importada con éxito! 🎉')
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo importar la receta')
+      setError(err instanceof Error && err.message ? err.message : 'No se pudo importar la receta.')
     } finally {
       setLoading(false)
     }
@@ -134,7 +137,8 @@ function UrlImport() {
             type="url"
             inputMode="url"
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            // TikTok's share sheet copies "Mira este vídeo https://vt.tiktok.com/…": keep just the link
+            onChange={(e) => setUrl(e.target.value.match(/https?:\/\/\S+/)?.[0] ?? e.target.value)}
             required
             placeholder="Enlace de TikTok, Instagram o YouTube"
             aria-label="Enlace de la receta"
@@ -153,8 +157,27 @@ function UrlImport() {
             {loading ? 'Importando…' : 'Importar'}
           </button>
         </div>
-        {error && <p className="text-sm font-semibold text-brick">{error}</p>}
+        {error && !platform && <p className="text-sm font-semibold text-brick">{error}</p>}
       </form>
+      {error && platform && !manual && (
+        <div role="alert" className="flex flex-col gap-2 rounded-3xl border-2 border-terracotta/40 p-3">
+          <p className="flex gap-1.5 text-sm font-semibold text-terracotta">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+            {error}
+          </p>
+          <button
+            type="button"
+            onClick={() =>
+              setManual({ id: newId(), origen: 'url', fuente: url.trim(), titulo: 'Receta importada', raciones: 2, tiempoPrep: 10, tiempoCoccion: 0, ingredientes: [], pasos: [] })
+            }
+            className={`${primaryBtn} h-auto py-2.5 text-left leading-snug`}
+          >
+            <ClipboardPaste className="size-4 shrink-0" aria-hidden />
+            No se pudo resolver el enlace automático. Toca aquí para pegar el texto/descripción del vídeo
+          </button>
+        </div>
+      )}
+      {manual && <RecipeEditor key={manual.id} recipe={manual} startPasting />}
       {result && <RecipeEditor key={result.recipe.id} recipe={result.recipe} notice={notice} startPasting={!result.recipe.ingredientes.length && !result.recipe.pasos.length} />}
     </div>
   )
