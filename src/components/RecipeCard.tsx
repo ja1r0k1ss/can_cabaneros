@@ -23,6 +23,9 @@ export default function RecipeCard({ recipe, open, badge, children }: { recipe: 
             </span>
             <span className="rounded-full bg-black/5 px-1.5 font-semibold dark:bg-white/10">{recipe.categoria ?? ORIGEN[recipe.origen]}</span>
           </p>
+          {recipe.adaptadaA && (
+            <span className="mt-1 inline-flex rounded-full bg-olive px-2 py-0.5 text-xs font-bold text-on-accent">Adaptada a tu {recipe.adaptadaA}</span>
+          )}
         </div>
         {badge}
         <ChevronRight className="size-4 opacity-50 transition-transform group-open:rotate-90" aria-hidden />

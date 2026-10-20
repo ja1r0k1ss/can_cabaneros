@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { MOCK_PANTRY, MOCK_RECIPES, MOCK_SHOPPING, MOCK_UTENSILS } from '../data/mock'
 import { deductFromPantry, mergeItems } from '../lib/pantry'
 import { matchesName } from '../lib/recipes'
-import { round2 } from '../lib/utils'
+import { newId, round2 } from '../lib/utils'
 import { UNIT_STEP, type PantryItem } from '../types/inventory'
 import { InventoryContext, type InventoryStore } from './inventory'
 
@@ -13,6 +13,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   const [recipes, setRecipes] = useState(MOCK_RECIPES)
   const [shopping, setShopping] = useState(MOCK_SHOPPING)
   const [labRecipeId, setLabRecipeId] = useState<string | null>(null)
+  const [servings, setServingsMap] = useState<Record<string, number>>({})
 
   const addShopping = (items: Omit<PantryItem, 'id'>[]) =>
     setShopping((prev) => mergeItems(prev, items.map((i) => ({ ...i, comprado: false }))))
@@ -23,6 +24,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     recipes,
     shopping,
     labRecipeId,
+    servings,
     addPantryItems: (items) => setPantry((prev) => mergeItems(prev, items)),
     stepQuantity: (id, direction) =>
       setPantry((prev) =>
@@ -33,8 +35,10 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     deductIngredients: (ingredients) => setPantry((prev) => deductFromPantry(prev, ingredients)),
     toggleUtensil: (id) =>
       setUtensils((prev) => prev.map((u) => (u.id === id ? { ...u, disponible: !u.disponible } : u))),
+    addUtensil: (utensil) => setUtensils((prev) => [...prev, { ...utensil, id: newId() }]),
     saveRecipe: (recipe) => setRecipes((prev) => [recipe, ...prev.filter((r) => r.id !== recipe.id)]),
     setLabRecipeId,
+    setServings: (id, n) => setServingsMap((prev) => ({ ...prev, [id]: n })),
     addShoppingItems: addShopping,
     addMissingToShopping: (ingredients) => {
       // only skip what was already pending before this call, so the same ingredient from two recipes still sums

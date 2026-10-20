@@ -25,4 +25,6 @@ export interface Recipe {
   tiempoCoccion: number
   ingredientes: RecipeIngredient[]
   pasos: string[]
+  /** Utensil label when the steps were rewritten for the user's equipment */
+  adaptadaA?: string
 }

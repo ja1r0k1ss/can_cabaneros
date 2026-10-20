@@ -1,0 +1,40 @@
+/** Spices, herbs and condiments: leaving them out changes flavour, not the dish */
+export const OPTIONAL_INGREDIENTS = [
+  'orégano', 'tomillo', 'romero', 'laurel', 'perejil', 'albahaca', 'cilantro', 'eneldo', 'comino', 'pimentón', 'canela',
+  'nuez moscada', 'guindilla', 'cayena', 'curry', 'cúrcuma', 'jengibre', 'pimienta', 'vino', 'salsa de soja', 'limón',
+]
+
+/** Common swaps; the first word set of `ingrediente` must appear in the missing ingredient's name */
+export const SUBSTITUTES: { ingrediente: string; opciones: string[] }[] = [
+  { ingrediente: 'mantequilla', opciones: ['aceite de oliva', 'margarina'] },
+  { ingrediente: 'nata', opciones: ['leche evaporada', 'yogur natural'] },
+  { ingrediente: 'leche', opciones: ['bebida de avena', 'agua con un poco de nata'] },
+  { ingrediente: 'yogur', opciones: ['yogur griego', 'nata'] },
+  { ingrediente: 'huevos', opciones: ['1 cda harina de garbanzo + 3 cdas agua por huevo', 'plátano maduro (en dulces)'] },
+  { ingrediente: 'orégano', opciones: ['tomillo', 'albahaca'] },
+  { ingrediente: 'romero', opciones: ['tomillo', 'orégano'] },
+  { ingrediente: 'tomillo', opciones: ['orégano', 'romero'] },
+  { ingrediente: 'comino', opciones: ['pimentón', 'curry'] },
+  { ingrediente: 'pimentón', opciones: ['pimentón dulce', 'comino'] },
+  { ingrediente: 'vino', opciones: ['caldo con un chorrito de limón', 'vinagre suave diluido'] },
+  { ingrediente: 'limón', opciones: ['lima', 'vinagre'] },
+  { ingrediente: 'cebolla', opciones: ['cebolleta', 'puerro'] },
+  { ingrediente: 'ajo', opciones: ['ajo en polvo'] },
+  { ingrediente: 'caldo', opciones: ['agua con pastilla de caldo', 'agua con sal'] },
+  { ingrediente: 'chorizo', opciones: ['panceta', 'más pimentón (versión vegetal)'] },
+  { ingrediente: 'azúcar', opciones: ['miel (3/4 de la cantidad)', 'panela'] },
+  { ingrediente: 'harina', opciones: ['maicena (la mitad de cantidad)', 'harina de avena'] },
+  { ingrediente: 'levadura', opciones: ['bicarbonato + zumo de limón'] },
+  { ingrediente: 'patatas', opciones: ['boniato'] },
+  { ingrediente: 'zanahoria', opciones: ['calabaza'] },
+  { ingrediente: 'pimiento', opciones: ['pimiento verde', 'calabacín'] },
+  { ingrediente: 'espinacas', opciones: ['acelgas', 'kale'] },
+  { ingrediente: 'pollo', opciones: ['pavo', 'contramuslos'] },
+  { ingrediente: 'aceite de girasol', opciones: ['aceite de oliva suave'] },
+  { ingrediente: 'aceite de oliva', opciones: ['aceite de girasol'] },
+  { ingrediente: 'arroz', opciones: ['quinoa', 'cuscús'] },
+  { ingrediente: 'espaguetis', opciones: ['cualquier pasta larga', 'macarrones'] },
+  { ingrediente: 'salmón', opciones: ['trucha', 'merluza'] },
+  { ingrediente: 'atún', opciones: ['caballa en lata', 'sardinas en lata'] },
+  { ingrediente: 'garbanzos', opciones: ['alubias cocidas', 'lentejas cocidas'] },
+]

@@ -1,13 +1,13 @@
 import { ArrowDownToLine, Check, Plus, ShoppingCart, Sparkles, X } from 'lucide-react'
 import { useState } from 'react'
 import { card, field, muted, primaryBtn } from '../components/ui'
-import { matchesName, missingIngredients } from '../lib/recipes'
+import { matchesName, missingIngredients, scaleRecipe } from '../lib/recipes'
 import { formatQty } from '../lib/utils'
-import { useInventory } from '../store/inventory'
+import { servingsOf, useInventory } from '../store/inventory'
 import { UNITS, type Unit } from '../types/inventory'
 
 export default function Compra() {
-  const { shopping, recipes, pantry, toggleBought, removeShoppingItem, addShoppingItems, addMissingToShopping, moveBoughtToPantry } =
+  const { shopping, recipes, pantry, toggleBought, removeShoppingItem, addShoppingItems, addMissingToShopping, moveBoughtToPantry, servings } =
     useInventory()
   const [msg, setMsg] = useState('')
   const bought = shopping.filter((s) => s.comprado).length
@@ -15,7 +15,8 @@ export default function Compra() {
   const sorted = [...shopping].sort((a, b) => Number(a.comprado) - Number(b.comprado))
 
   function generate() {
-    const n = addMissingToShopping(recipes.flatMap((r) => missingIngredients(r.ingredientes, pantry)))
+    // uses the servings chosen in the Recetario for each recipe
+    const n = addMissingToShopping(recipes.flatMap((r) => missingIngredients(scaleRecipe(r, servingsOf(r, servings)).ingredientes, pantry)))
     setMsg(n ? `${n} ingredientes añadidos desde tus recetas` : 'No falta nada nuevo para tus recetas')
   }
 

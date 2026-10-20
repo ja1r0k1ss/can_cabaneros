@@ -2,9 +2,10 @@ import { BookOpen, ChefHat, Search, ShoppingCart } from 'lucide-react'
 import { useState } from 'react'
 import RecipeCard from '../components/RecipeCard'
 import { card, muted, primaryBtn } from '../components/ui'
-import { missingIngredients, missingUtensils } from '../lib/recipes'
+import ServingsStepper from '../components/ServingsStepper'
+import { missingIngredients, missingUtensils, scaleRecipe } from '../lib/recipes'
 import { normalize } from '../lib/utils'
-import { useInventory } from '../store/inventory'
+import { servingsOf, useInventory } from '../store/inventory'
 import { UTENSIL_CATEGORIES } from '../types/inventory'
 import { RECIPE_CATEGORIES, type Recipe, type RecipeIngredient } from '../types/recipe'
 import type { ViewProps } from './types'
@@ -52,7 +53,7 @@ function RecipeActions({ recipe, missing, navigate }: { recipe: Recipe; missing:
 }
 
 export default function Recetario({ navigate }: ViewProps) {
-  const { recipes, pantry, utensils } = useInventory()
+  const { recipes, pantry, utensils, servings, setServings } = useInventory()
   const [query, setQuery] = useState('')
   const [maxTime, setMaxTime] = useState(0)
   const [category, setCategory] = useState('')
@@ -69,7 +70,11 @@ export default function Recetario({ navigate }: ViewProps) {
 
   const q = normalize(query)
   const list = recipes
-    .map((recipe) => ({ recipe, missing: missingIngredients(recipe.ingredientes, pantry), noUtensils: missingUtensils(recipe, utensils) }))
+    .map((base) => {
+      // badge, missing list and shopping all follow the servings chosen on the card
+      const recipe = scaleRecipe(base, servingsOf(base, servings))
+      return { base, recipe, missing: missingIngredients(recipe.ingredientes, pantry), noUtensils: missingUtensils(recipe, utensils) }
+    })
     .filter(
       ({ recipe: r, noUtensils }) =>
         [r.titulo, ...r.ingredientes.map((i) => i.nombre)].some((t) => normalize(t).includes(q)) &&
@@ -115,15 +120,17 @@ export default function Recetario({ navigate }: ViewProps) {
         </select>
       </div>
 
-      {list.map(({ recipe, missing, noUtensils }) => (
+      {list.map(({ base, recipe, missing, noUtensils }) => (
         <RecipeCard key={recipe.id} recipe={recipe} badge={<StatusBadge missing={missing.length} />}>
+          <ServingsStepper value={recipe.raciones} base={base.raciones} onChange={(n) => setServings(base.id, n)} />
           {missing.length > 0 && (
             <p className="text-xs font-semibold text-terracotta">Falta: {missing.map((i) => i.nombre).join(', ')}</p>
           )}
           {noUtensils.length > 0 && (
             <p className="text-xs font-semibold text-brick">Sin utensilio: {noUtensils.join(', ')}</p>
           )}
-          <RecipeActions recipe={recipe} missing={missing} navigate={navigate} />
+          {/* keyed by servings so "added to list" resets when the amounts change */}
+          <RecipeActions key={recipe.raciones} recipe={recipe} missing={missing} navigate={navigate} />
         </RecipeCard>
       ))}
       {list.length === 0 && <p className={`py-6 text-center text-sm ${muted}`}>Sin resultados</p>}

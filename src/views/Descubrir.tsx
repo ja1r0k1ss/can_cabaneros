@@ -1,10 +1,11 @@
-import { Check, Link, LoaderCircle, PenLine, Sparkles } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { Check, Info, Link, LoaderCircle, PenLine, Sparkles } from 'lucide-react'
+import { useState, type FormEvent, type ReactNode } from 'react'
+import AdaptPanel from '../components/AdaptPanel'
 import RecipeCard from '../components/RecipeCard'
 import { card, field, muted, primaryBtn } from '../components/ui'
-import { parseIngredientLine } from '../lib/recipes'
+import { missingUtensils, parseIngredientLine } from '../lib/recipes'
 import { newId } from '../lib/utils'
-import { detectPlatform, parseRecipeUrl, suggestRecipes, type Suggestion } from '../services/ai'
+import { detectPlatform, parseRecipeUrl, suggestRecipes, type Suggestion, type UrlImport } from '../services/ai'
 import { useInventory } from '../store/inventory'
 import { UTENSIL_CATEGORIES, type UtensilCategory } from '../types/inventory'
 import { RECIPE_CATEGORIES, type Recipe, type RecipeCategory, type RecipeIngredient } from '../types/recipe'
@@ -26,11 +27,27 @@ function SaveButton({ recipe }: { recipe: Recipe }) {
   )
 }
 
+/** Discovered recipe: equipment check, optional adaptation and save */
+function PreviewCard({ recipe: original, open, children }: { recipe: Recipe; open?: boolean; children?: ReactNode }) {
+  const { utensils } = useInventory()
+  const [recipe, setRecipe] = useState(original)
+  const lacking = missingUtensils(recipe, utensils)
+
+  return (
+    <RecipeCard recipe={recipe} open={open}>
+      {children}
+      {lacking.length > 0 && <p className="text-xs font-semibold text-terracotta">No tienes disponible: {lacking.join(', ')}</p>}
+      <AdaptPanel recipe={recipe} original={original} onChange={setRecipe} />
+      <SaveButton recipe={recipe} />
+    </RecipeCard>
+  )
+}
+
 function UrlImport() {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [recipe, setRecipe] = useState<Recipe | null>(null)
+  const [result, setResult] = useState<UrlImport | null>(null)
   const platform = detectPlatform(url.trim())
 
   async function submit(e: FormEvent) {
@@ -38,7 +55,7 @@ function UrlImport() {
     setError('')
     setLoading(true)
     try {
-      setRecipe(await parseRecipeUrl(url.trim()))
+      setResult(await parseRecipeUrl(url.trim()))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo importar la receta')
     } finally {
@@ -65,15 +82,21 @@ function UrlImport() {
           </span>
           <button type="submit" disabled={loading || !platform} className={primaryBtn}>
             {loading && <LoaderCircle className="size-4 animate-spin" aria-hidden />}
-            {loading ? 'Extrayendo…' : 'Importar'}
+            {loading ? 'Analizando…' : 'Importar'}
           </button>
         </div>
         {error && <p className="text-sm font-semibold text-brick">{error}</p>}
       </form>
-      {recipe && (
-        <RecipeCard key={recipe.id} recipe={recipe} open>
-          <SaveButton recipe={recipe} />
-        </RecipeCard>
+      {result && (
+        <>
+          <p className="flex items-center gap-1.5 px-1 text-xs font-semibold text-olive">
+            <Info className="size-3.5 shrink-0" aria-hidden />
+            {result.usoDescripcion
+              ? 'Análisis completado (incluyendo texto de la descripción del vídeo)'
+              : 'Análisis completado (transcripción del audio)'}
+          </p>
+          <PreviewCard key={result.recipe.id} recipe={result.recipe} open />
+        </>
       )}
     </div>
   )
@@ -96,7 +119,7 @@ function ManualForm() {
       origen: 'manual',
       categoria: form.get('categoria') as RecipeCategory,
       utensilios: form.getAll('utensilios') as UtensilCategory[],
-      raciones: num('raciones') || 1,
+      raciones: num('raciones') || 2,
       tiempoPrep: num('prep'),
       tiempoCoccion: num('coccion'),
       ingredientes: lines(String(form.get('ingredientes'))).map(parseIngredientLine).filter((i): i is RecipeIngredient => i !== null),
@@ -170,12 +193,11 @@ function AiSuggest() {
       </button>
       {results?.length === 0 && <p className={`py-4 text-center text-sm ${muted}`}>No hay recetas con tu stock actual. Prueba a cargar un ticket.</p>}
       {results?.map(({ recipe, missing }) => (
-        <RecipeCard key={recipe.id} recipe={recipe}>
+        <PreviewCard key={recipe.id} recipe={recipe}>
           <p className={`text-xs font-semibold ${missing.length ? 'text-terracotta' : 'text-olive'}`}>
             {missing.length ? `Te falta: ${missing.join(', ')}` : 'Tienes todos los ingredientes'}
           </p>
-          <SaveButton recipe={recipe} />
-        </RecipeCard>
+        </PreviewCard>
       ))}
     </div>
   )

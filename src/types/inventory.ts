@@ -27,7 +27,7 @@ export interface PantryItem {
   fechaCaducidad?: string
 }
 
-export const UTENSIL_CATEGORIES = ['Sartén', 'Olla', 'Horno', 'Airfryer', 'Batidora', 'Utensilio manual'] as const
+export const UTENSIL_CATEGORIES = ['Sartén', 'Olla', 'Olla lenta', 'Horno', 'Airfryer', 'Batidora', 'Utensilio manual'] as const
 export type UtensilCategory = (typeof UTENSIL_CATEGORIES)[number]
 
 export interface Utensil {
@@ -35,6 +35,9 @@ export interface Utensil {
   nombre: string
   categoria: UtensilCategory
   disponible: boolean
+  /** Free text: "3,1 L", "28 cm" */
+  capacidad?: string
+  notas?: string
 }
 
 export interface ShoppingItem {

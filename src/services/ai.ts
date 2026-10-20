@@ -1,6 +1,7 @@
 // shortcut: every function here is a mock with a fake delay; swap the bodies for real vision/LLM calls behind a backend (never ship API keys to the client)
 import { RECIPE_CATALOG } from '../data/recipes'
-import { missingIngredients } from '../lib/recipes'
+import { MOCK_POSTS } from '../data/posts'
+import { inferUtensils, missingIngredients, parseRecipeText, stepSeconds } from '../lib/recipes'
 import { newId } from '../lib/utils'
 import type { PantryItem } from '../types/inventory'
 import type { Recipe } from '../types/recipe'
@@ -41,13 +42,43 @@ export function detectPlatform(url: string): string | null {
   }
 }
 
-/** Extracts a recipe from a TikTok / Instagram Reel / YouTube link */
-export async function parseRecipeUrl(url: string): Promise<Recipe> {
-  if (!detectPlatform(url)) throw new Error('Enlace no válido. Usa un enlace de TikTok, Instagram o YouTube.')
-  await wait(1000)
-  // same link always yields the same canned recipe
-  const hash = [...url].reduce((h, c) => h + c.charCodeAt(0), 0)
-  return { ...RECIPE_CATALOG[hash % RECIPE_CATALOG.length], id: newId(), origen: 'url', fuente: url }
+export interface UrlImport {
+  recipe: Recipe
+  /** True when ingredients or steps came from the post caption because the audio didn't have them */
+  usoDescripcion: boolean
+}
+
+/** Extracts a recipe from a TikTok / Instagram Reel / YouTube link, reading both the audio transcript and the caption */
+export async function parseRecipeUrl(url: string): Promise<UrlImport> {
+  const platform = detectPlatform(url)
+  if (!platform) throw new Error('Enlace no válido. Usa un enlace de TikTok, Instagram o YouTube.')
+  await wait(1400)
+  const post = MOCK_POSTS[platform]
+
+  const audio = parseRecipeText(post.transcripcion)
+  const caption = parseRecipeText(post.descripcion)
+  // many videos are music-only: the recipe lives in the caption, so fall back to it field by field
+  const ingredientes = audio.ingredientes.length ? audio.ingredientes : caption.ingredientes
+  const pasos = audio.pasos.length ? audio.pasos : caption.pasos
+  if (!ingredientes.length || !pasos.length)
+    throw new Error('No se encontró una receta completa ni en el audio ni en la descripción del vídeo.')
+
+  const stepMinutes = pasos.reduce((sum, p) => sum + (stepSeconds(p) ?? 0) / 60, 0)
+  return {
+    usoDescripcion: !audio.ingredientes.length || !audio.pasos.length,
+    recipe: {
+      id: newId(),
+      origen: 'url',
+      fuente: url,
+      titulo: post.titulo.replace(/#\S+/g, '').replace(/\p{Extended_Pictographic}\uFE0F?/gu, '').replace(/\s+/g, ' ').trim(),
+      raciones: audio.raciones ?? caption.raciones ?? 2,
+      tiempoPrep: audio.tiempoPrep ?? caption.tiempoPrep ?? 10,
+      tiempoCoccion: audio.tiempoCoccion ?? caption.tiempoCoccion ?? Math.round(stepMinutes),
+      utensilios: inferUtensils(pasos),
+      ingredientes,
+      pasos,
+    },
+  }
 }
 
 export interface Suggestion {
