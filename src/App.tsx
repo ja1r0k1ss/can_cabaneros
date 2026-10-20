@@ -41,7 +41,7 @@ export default function App() {
       {/* Mac: compact sidebar */}
       <aside className="hidden w-52 shrink-0 flex-col gap-1 border-r border-line p-3 md:flex dark:border-moss-light">
         <div className="mb-3 flex items-center gap-2 px-2">
-          <span className="grid size-7 place-items-center rounded-lg bg-olive text-sm font-bold text-on-accent">C</span>
+          <img src="/favicon.svg" alt="" className="size-7" />
           <span className="font-bold">Can Cabañeros</span>
         </div>
         <nav className="flex flex-col gap-0.5">

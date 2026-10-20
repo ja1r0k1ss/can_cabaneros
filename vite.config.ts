@@ -11,15 +11,20 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: false, // registered explicitly in src/main.tsx
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Can Cabañeros',
         short_name: 'Cabañeros',
         lang: 'es',
         theme_color: '#f7f6f0',
-        background_color: '#f7f6f0',
+        background_color: '#556b2f', // olive splash behind the icon on launch
         display: 'standalone',
-        icons: [{ src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml' }],
+        icons: [
+          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+          // full-bleed olive with the hat inside the safe zone, so it also works masked
+          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
       },
     }),
   ],
