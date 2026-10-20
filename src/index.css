@@ -1,0 +1,52 @@
+@import 'tailwindcss';
+
+/* Class-based dark mode, toggled from the header (see App.tsx / index.html) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Organic olive palette, see DESIGN.md. Spacing kept compact for a dense mobile UI */
+@theme {
+  /* Accents: values swap under .dark below to keep WCAG AA contrast in both themes */
+  --color-olive: #556b2f;
+  --color-terracotta: #a4503a;
+  --color-brick: #a3352a;
+  --color-on-accent: #f7f6f0;
+  --color-sage: #8a9a86;
+
+  /* Light neutrals */
+  --color-linen: #f7f6f0;
+  --color-oat: #eceadf;
+  --color-line: #e2dfd3;
+  --color-ink: #2b2d2f;
+
+  /* Dark neutrals */
+  --color-basalt: #121511;
+  --color-moss: #1e231c;
+  --color-moss-light: #2a3127;
+  --color-moss-lighter: #3a4336;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  --radius-3xl: 26px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+.dark {
+  /* native controls (date picker, select, scrollbars) follow the theme */
+  color-scheme: dark;
+  /* lighter accents read on basalt/moss; text on them flips to dark */
+  --color-olive: #a3b86c;
+  --color-terracotta: #d9876c;
+  --color-brick: #e5776a;
+  --color-on-accent: #121511;
+}
+
+body {
+  @apply bg-linen font-sans text-ink antialiased dark:bg-basalt dark:text-linen;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
