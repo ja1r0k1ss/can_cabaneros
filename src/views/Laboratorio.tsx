@@ -144,7 +144,7 @@ function CookMode({ recipe, onExit }: { recipe: Recipe; onExit: () => void }) {
               return (
                 <div key={n} hidden={step !== n + 1} className="space-y-4">
                   <p className="text-2xl leading-snug font-semibold md:text-3xl">{text}</p>
-                  {secs && <StepTimer seconds={secs} />}
+                  {secs ? <StepTimer seconds={secs} /> : null}
                 </div>
               )
             })}
@@ -160,7 +160,7 @@ function CookMode({ recipe, onExit }: { recipe: Recipe; onExit: () => void }) {
               </button>
             ) : (
               <button type="button" onClick={() => setStep(step + 1)} className={`${navBtn} bg-olive text-on-accent`}>
-                Siguiente
+                Siguiente paso
                 <ChevronRight className="size-5" aria-hidden />
               </button>
             )}
