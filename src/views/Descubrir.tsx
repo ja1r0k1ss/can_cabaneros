@@ -1,11 +1,14 @@
-import { Check, Info, Link, LoaderCircle, PenLine, Sparkles } from 'lucide-react'
+import { Check, Info, Link, LoaderCircle, PenLine, Sparkles, TriangleAlert } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import AdaptPanel from '../components/AdaptPanel'
 import RecipeCard from '../components/RecipeCard'
+import RecipeEditor from '../components/RecipeEditor'
 import { card, field, muted, primaryBtn } from '../components/ui'
 import { missingUtensils, parseIngredientLine } from '../lib/recipes'
 import { newId } from '../lib/utils'
-import { detectPlatform, parseRecipeUrl, suggestRecipes, type Suggestion, type UrlImport } from '../services/ai'
+import { detectPlatform } from '../lib/recipeImport'
+import { suggestRecipes, type Suggestion } from '../services/ai'
+import { importFromUrl, type UrlImportResult } from '../services/recipeImport'
 import { useInventory } from '../store/inventory'
 import { UTENSIL_CATEGORIES, type UtensilCategory } from '../types/inventory'
 import { RECIPE_CATEGORIES, type Recipe, type RecipeCategory, type RecipeIngredient } from '../types/recipe'
@@ -47,7 +50,7 @@ function UrlImport() {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [result, setResult] = useState<UrlImport | null>(null)
+  const [result, setResult] = useState<UrlImportResult | null>(null)
   const platform = detectPlatform(url.trim())
 
   async function submit(e: FormEvent) {
@@ -55,13 +58,32 @@ function UrlImport() {
     setError('')
     setLoading(true)
     try {
-      setResult(await parseRecipeUrl(url.trim()))
+      setResult(await importFromUrl(url.trim()))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo importar la receta')
     } finally {
       setLoading(false)
     }
   }
+
+  const notice = result && (
+    <div className="flex flex-col gap-1 px-1 text-xs font-semibold">
+      {result.aviso ? (
+        <p className="flex gap-1.5 text-terracotta">
+          <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
+          {result.aviso}
+        </p>
+      ) : (
+        <p className={`flex gap-1.5 ${result.completa ? 'text-olive' : 'text-terracotta'}`}>
+          <Info className="mt-px size-3.5 shrink-0" aria-hidden />
+          {result.completa
+            ? 'Análisis completado (incluyendo texto de la descripción del vídeo)'
+            : 'Lectura parcial de la descripción: revisa ingredientes y pasos antes de guardar.'}
+        </p>
+      )}
+      {result.ingredientesDeducidos && <p className={muted}>Ingredientes deducidos del texto, sin cantidades: complétalos.</p>}
+    </div>
+  )
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -82,22 +104,12 @@ function UrlImport() {
           </span>
           <button type="submit" disabled={loading || !platform} className={primaryBtn}>
             {loading && <LoaderCircle className="size-4 animate-spin" aria-hidden />}
-            {loading ? 'Analizando…' : 'Importar'}
+            {loading ? 'Leyendo…' : 'Importar'}
           </button>
         </div>
         {error && <p className="text-sm font-semibold text-brick">{error}</p>}
       </form>
-      {result && (
-        <>
-          <p className="flex items-center gap-1.5 px-1 text-xs font-semibold text-olive">
-            <Info className="size-3.5 shrink-0" aria-hidden />
-            {result.usoDescripcion
-              ? 'Análisis completado (incluyendo texto de la descripción del vídeo)'
-              : 'Análisis completado (transcripción del audio)'}
-          </p>
-          <PreviewCard key={result.recipe.id} recipe={result.recipe} open />
-        </>
-      )}
+      {result && <RecipeEditor key={result.recipe.id} recipe={result.recipe} notice={notice} startPasting={!!result.aviso} />}
     </div>
   )
 }

@@ -150,18 +150,45 @@ test('adaptRecipe rewrites steps for slow cooker and airfryer', () => {
   assert.deepEqual(air.utensilios, ['Sartén', 'Airfryer'])
 })
 
-import { MOCK_POSTS } from '../src/data/posts.ts'
+import { buildImport, cleanTitle, detectPlatform, guessIngredients } from '../src/lib/recipeImport.ts'
 
-test('every mock post yields a full recipe from audio or caption', () => {
-  for (const [platform, post] of Object.entries(MOCK_POSTS)) {
-    const audio = parseRecipeText(post.transcripcion)
-    const caption = parseRecipeText(post.descripcion)
-    const ingredientes = audio.ingredientes.length ? audio.ingredientes : caption.ingredientes
-    const pasos = audio.pasos.length ? audio.pasos : caption.pasos
-    assert.ok(ingredientes.length >= 5, `${platform} ingredients`)
-    assert.equal(pasos.length, 5, `${platform} steps`)
-  }
-  assert.equal(parseRecipeText(MOCK_POSTS.TikTok.transcripcion).pasos.length, 0, 'TikTok audio is music only')
+test('buildImport reads a one-line TikTok caption into a full recipe', () => {
+  const caption =
+    'Lentejas de la abuela 🥣 #receta Para 4 personas Ingredientes: 300 g de lentejas pardinas, 1 cebolla, 2 dientes de ajo, 1,5 l de caldo Preparación: 1. Pocha la cebolla 10 min. 2. Añade las lentejas y el caldo y cuece 45 min. #lentejas'
+  const { recipe, completa, ingredientesDeducidos } = buildImport('https://www.tiktok.com/@a/video/1', { texto: caption })
+  assert.ok(completa)
+  assert.ok(!ingredientesDeducidos)
+  assert.equal(recipe.titulo, 'Lentejas de la abuela')
+  assert.equal(recipe.raciones, 4)
+  assert.deepEqual(recipe.ingredientes.map((i) => [i.cantidad, i.unidad, i.nombre]), [
+    [300, 'g', 'lentejas pardinas'],
+    [1, 'ud', 'cebolla'],
+    [2, 'ud', 'dientes de ajo'],
+    [1.5, 'l', 'caldo'],
+  ])
+  assert.deepEqual(recipe.pasos, ['Pocha la cebolla 10 min.', 'Añade las lentejas y el caldo y cuece 45 min.'])
+  assert.equal(recipe.tiempoCoccion, 55)
+})
+
+test('buildImport never invents steps: title-only links get deduced ingredients and no steps', () => {
+  const { recipe, completa, ingredientesDeducidos } = buildImport('https://youtu.be/x', { titulo: 'Pechuga de pollo al limón con arroz | Receta fácil' })
+  assert.ok(!completa)
+  assert.ok(ingredientesDeducidos)
+  assert.equal(recipe.titulo, 'Pechuga de pollo al limón con arroz | Receta fácil')
+  assert.deepEqual(recipe.ingredientes.map((i) => i.nombre), ['limón', 'pollo', 'arroz'])
+  assert.deepEqual(recipe.pasos, [])
+  const empty = buildImport('https://www.instagram.com/reel/x', {})
+  assert.equal(empty.recipe.titulo, 'Receta importada')
+  assert.deepEqual(empty.recipe.ingredientes, [])
+})
+
+test('import helpers', () => {
+  assert.equal(detectPlatform('https://vm.tiktok.com/ZMabc/'), 'TikTok')
+  assert.equal(detectPlatform('https://youtu.be/abc'), 'YouTube')
+  assert.equal(detectPlatform('https://eviltiktok.com/x'), null)
+  assert.equal(detectPlatform('no es un enlace'), null)
+  assert.equal(cleanTitle('#receta #fácil\nTarta de queso 🍰 #postre'), 'Tarta de queso')
+  assert.deepEqual(guessIngredients('pasta con tomate frito y queso'), ['queso', 'pasta', 'tomate frito'])
 })
 
 import { isOptional, splitByChanges, substitutesFor } from '../src/lib/substitutes.ts'
@@ -215,4 +242,44 @@ test('splitByChanges marks ingredient mentions accent- and plural-insensitively'
     [['muslos', 'pavo'], ['ORÉGANO', null], ['ajo', null], ['ajos', null]],
   )
   assert.deepEqual(splitByChanges('Hornea 40 min', changes), ['Hornea 40 min'])
+})
+
+import { arrayOf, isShoppingItem, readStored, servingsMap, writeStored, type KVStorage } from '../src/lib/storage.ts'
+import type { ShoppingItem } from '../src/types/inventory.ts'
+
+const fakeStorage = (init: Record<string, string> = {}): KVStorage & { data: Record<string, string> } => ({
+  data: { ...init },
+  getItem(k) {
+    return k in this.data ? this.data[k] : null
+  },
+  setItem(k, v) {
+    this.data[k] = v
+  },
+})
+
+test('readStored: roundtrip, salvage of bad items, corrupt backup, blocked storage', () => {
+  const validate = arrayOf<ShoppingItem>(isShoppingItem)
+  const good: ShoppingItem = { id: 's1', nombre: 'Patatas', categoria: 'Verduras/Hortalizas', cantidad: 2, unidad: 'kg', comprado: true }
+  const fallback: ShoppingItem[] = []
+
+  const s = fakeStorage()
+  assert.equal(readStored(s, 'k', fallback, validate), fallback, 'empty storage -> fallback')
+  assert.ok(writeStored(s, 'k', [good]))
+  assert.deepEqual(readStored(s, 'k', fallback, validate), [good])
+
+  // one malformed item doesn't wipe the list
+  s.setItem('k', JSON.stringify([good, { id: 'x', nombre: 'roto' }, null]))
+  assert.deepEqual(readStored(s, 'k', fallback, validate), [good])
+
+  // unparseable JSON is backed up, never silently lost
+  s.setItem('k', '[{"id":"s1",')
+  assert.equal(readStored(s, 'k', fallback, validate), fallback)
+  assert.equal(s.data['k__corrupt_backup'], '[{"id":"s1",')
+
+  const blocked: KVStorage = { getItem: () => { throw new Error('SecurityError') }, setItem: () => { throw new Error('QuotaExceeded') } }
+  assert.equal(readStored(blocked, 'k', fallback, validate), fallback)
+  assert.equal(writeStored(blocked, 'k', [good]), false)
+
+  assert.equal(servingsMap({ r1: 4, r2: 'x' }), undefined)
+  assert.deepEqual(servingsMap({ r1: 4 }), { r1: 4 })
 })

@@ -74,7 +74,7 @@ export function parseRecipeText(text: string): ParsedRecipeText {
   let section: 'ing' | 'steps' | null = null
   let numbered = false
   for (const raw of text.split('\n')) {
-    const line = raw.trim()
+    const line = raw.replace(/(?:\s+#\S+)+\s*$/, '').trim() // trailing hashtags
     if (!line || line.startsWith('#')) continue
     const header = line.match(SECTION)
     if (header) {
@@ -96,8 +96,11 @@ export function parseRecipeText(text: string): ParsedRecipeText {
     // once steps are numbered, unnumbered lines are sign-offs ("¡Guárdalo! 👇"), not steps
     else if (section === 'steps' && !numbered) out.pasos.push(line.replace(BULLET, ''))
     else if (section === 'ing') {
-      const ing = parseIngredientLine(line.replace(BULLET, ''))
-      if (ing) out.ingredientes.push(ing)
+      // "300 g de lentejas, 1 cebolla, sal" on one line; ",\s" so "1,5 kg" stays whole
+      for (const part of line.replace(BULLET, '').split(/,\s+/)) {
+        const ing = parseIngredientLine(part)
+        if (ing) out.ingredientes.push(ing)
+      }
     }
     // anything else is chatter ("¡quedan increíbles!", links...) and is ignored
   }

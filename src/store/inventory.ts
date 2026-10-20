@@ -19,6 +19,8 @@ export interface InventoryStore {
   deductIngredients: (ingredients: RecipeIngredient[]) => void
   toggleUtensil: (id: string) => void
   addUtensil: (utensil: Omit<Utensil, 'id'>) => void
+  updateUtensil: (id: string, utensil: Omit<Utensil, 'id'>) => void
+  removeUtensil: (id: string) => void
   saveRecipe: (recipe: Recipe) => void
   setLabRecipeId: (id: string) => void
   setServings: (recipeId: string, servings: number) => void
