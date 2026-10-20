@@ -89,6 +89,7 @@ export default function RecipeEditor({ recipe, notice, startPasting }: { recipe:
       utensilios: inferUtensils(pasos),
       ingredientes,
       pasos,
+      revisar: false, // the user has reviewed it here
     })
   }
 

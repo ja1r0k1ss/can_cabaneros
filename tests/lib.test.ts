@@ -283,3 +283,49 @@ test('readStored: roundtrip, salvage of bad items, corrupt backup, blocked stora
   assert.equal(servingsMap({ r1: 4, r2: 'x' }), undefined)
   assert.deepEqual(servingsMap({ r1: 4 }), { r1: 4 })
 })
+
+import { extractTikTokItem, parseTikTokUrl, pickRecipeComments, vttToText } from '../api/_sources.ts'
+
+test('TikTok source parsers', () => {
+  assert.deepEqual(parseTikTokUrl('https://www.tiktok.com/@cocina_ana/video/7412345678901234567?is_from_webapp=1'), { author: 'cocina_ana', id: '7412345678901234567' })
+  assert.deepEqual(parseTikTokUrl('https://vm.tiktok.com/ZMabc/'), { author: undefined, id: undefined })
+
+  const json = JSON.stringify({
+    __DEFAULT_SCOPE__: {
+      'webapp.video-detail': {
+        itemInfo: {
+          itemStruct: {
+            desc: 'Lentejas 🥣 Ingredientes: 300 g de lentejas',
+            author: { uniqueId: 'cocina_ana' },
+            video: {
+              claInfo: { captionInfos: [{ language: 'eng-US', url: 'https://v16.tiktokcdn.com/en.vtt' }, { language: 'spa-ES', url: 'https://v16.tiktokcdn.com/es.vtt' }] },
+              subtitleInfos: [{ LanguageCodeName: 'fra-FR', Url: 'javascript:alert(1)' }],
+            },
+          },
+        },
+      },
+    },
+  })
+  const item = extractTikTokItem(`<html><script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${json}</script></html>`)
+  assert.deepEqual(item, {
+    desc: 'Lentejas 🥣 Ingredientes: 300 g de lentejas',
+    author: 'cocina_ana',
+    captionUrls: ['https://v16.tiktokcdn.com/es.vtt', 'https://v16.tiktokcdn.com/en.vtt'],
+  }, 'Spanish track first, non-https dropped')
+  assert.equal(extractTikTokItem('<html>login wall</html>'), null)
+
+  assert.equal(
+    vttToText('WEBVTT\n\n1\n00:00:00.000 --> 00:00:02.000\nHoy hacemos <c>lentejas</c>\n\n2\n00:00:02.000 --> 00:00:04.000\nHoy hacemos lentejas\nPon 300 gramos'),
+    'Hoy hacemos lentejas\nPon 300 gramos',
+  )
+
+  const comments = {
+    comments: [
+      { text: 'qué rico!!', user: { unique_id: 'fan1' }, author_pin: false, stick_position: 0 },
+      { text: 'Receta: 300 g lentejas, 1 cebolla...', user: { unique_id: 'cocina_ana' }, author_pin: false, stick_position: 0 },
+      { text: 'Fijado: pasos en la descripción', user: { unique_id: 'otro' }, author_pin: true },
+    ],
+  }
+  assert.deepEqual(pickRecipeComments(comments, 'cocina_ana'), ['Receta: 300 g lentejas, 1 cebolla...', 'Fijado: pasos en la descripción'])
+  assert.deepEqual(pickRecipeComments({ status_code: 10201 }, 'x'), [])
+})

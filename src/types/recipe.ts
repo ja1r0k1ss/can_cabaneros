@@ -27,4 +27,16 @@ export interface Recipe {
   pasos: string[]
   /** Utensil label when the steps were rewritten for the user's equipment */
   adaptadaA?: string
+  /** Imported with gaps (missing quantities or steps): flagged "Revisar ingredientes" until the user saves it from the editor */
+  revisar?: boolean
+}
+
+/** Response of POST /api/parse-video (also produced by the in-browser fallback) */
+export interface ParseVideoResponse {
+  recipe: Recipe
+  /** Which sources had text */
+  fuentes: { descripcion: boolean; comentarios: number; transcripcion: boolean }
+  motor: 'claude' | 'reglas'
+  completa: boolean
+  avisos: string[]
 }

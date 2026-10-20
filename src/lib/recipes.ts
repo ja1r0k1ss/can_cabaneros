@@ -19,6 +19,10 @@ const STOPWORDS = new Set(['de', 'del', 'la', 'el', 'en', 'y', 'con', 'diente', 
 const BASICS = new Set(['sal', 'agua', 'pimienta'])
 
 export const words = (s: string) => normalize(s).split(/\s+/).filter((w) => w && !STOPWORDS.has(w))
+
+/** Salt, water, pepper: assumed at hand, never tracked or required */
+export const isBasicIngredient = (nombre: string) => words(nombre).every((w) => BASICS.has(w))
+
 // crude Spanish plural handling: "tomates" ~ "tomate", "limones" ~ "limon"
 const stems = (w: string) => [w, w.replace(/s$/, ''), w.replace(/es$/, '')]
 const sameWord = (a: string, b: string) => stems(a).some((s) => stems(b).includes(s))
@@ -32,7 +36,7 @@ export function matchesName(ingredient: string, itemName: string): boolean {
 
 /** What's still missing of an ingredient given the pantry, or null if covered */
 export function shortfall(ing: RecipeIngredient, pantry: PantryItem[]): RecipeIngredient | null {
-  if (words(ing.nombre).every((w) => BASICS.has(w))) return null
+  if (isBasicIngredient(ing.nombre)) return null
   const matches = pantry.filter((p) => p.cantidad > 0 && matchesName(ing.nombre, p.nombre))
   if (!matches.length) return ing
   if (ing.cantidad == null || !ing.unidad) return null

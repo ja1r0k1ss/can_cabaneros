@@ -1,5 +1,5 @@
-import { Check, Info, Link, LoaderCircle, PenLine, Sparkles, TriangleAlert } from 'lucide-react'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { Check, ClipboardPaste, Info, Link, LoaderCircle, PenLine, Sparkles, TriangleAlert } from 'lucide-react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import AdaptPanel from '../components/AdaptPanel'
 import RecipeCard from '../components/RecipeCard'
 import RecipeEditor from '../components/RecipeEditor'
@@ -8,7 +8,7 @@ import { missingUtensils, parseIngredientLine } from '../lib/recipes'
 import { newId } from '../lib/utils'
 import { detectPlatform } from '../lib/recipeImport'
 import { suggestRecipes, type Suggestion } from '../services/ai'
-import { importFromUrl, type UrlImportResult } from '../services/recipeImport'
+import { importRecipe, type ImportResult } from '../services/recipeImport'
 import { useInventory } from '../store/inventory'
 import { UTENSIL_CATEGORIES, type UtensilCategory } from '../types/inventory'
 import { RECIPE_CATEGORIES, type Recipe, type RecipeCategory, type RecipeIngredient } from '../types/recipe'
@@ -47,18 +47,32 @@ function PreviewCard({ recipe: original, open, children }: { recipe: Recipe; ope
 }
 
 function UrlImport() {
+  const { saveRecipe } = useInventory()
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [result, setResult] = useState<UrlImportResult | null>(null)
+  const [result, setResult] = useState<ImportResult | null>(null)
+  const [toast, setToast] = useState('')
   const platform = detectPlatform(url.trim())
 
-  async function submit(e: FormEvent) {
-    e.preventDefault()
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(''), 3500)
+    return () => clearTimeout(t)
+  }, [toast])
+
+  async function run(link: string) {
     setError('')
+    setResult(null)
     setLoading(true)
     try {
-      setResult(await importFromUrl(url.trim()))
+      const r = await importRecipe(link)
+      setResult(r)
+      // save straight away when there is something to save; empty reads go to the editor instead
+      if (r.recipe.ingredientes.length || r.recipe.pasos.length) {
+        saveRecipe(r.recipe)
+        setToast('¡Receta extraída e importada con éxito! 🎉')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo importar la receta')
     } finally {
@@ -66,50 +80,82 @@ function UrlImport() {
     }
   }
 
+  async function pasteFromClipboard() {
+    try {
+      // iOS shows its "Pegar" bubble: reading the clipboard always needs this tap
+      const text = (await navigator.clipboard.readText()).trim()
+      const link = text.match(/https?:\/\/\S+/)?.[0] ?? text
+      setUrl(link)
+      if (detectPlatform(link)) run(link)
+      else setError('El portapapeles no contiene un enlace de TikTok, Instagram o YouTube.')
+    } catch {
+      setError('No se pudo leer el portapapeles. Pega el enlace a mano.')
+    }
+  }
+
+  const sourceList = result
+    ? [result.fuentes.descripcion && 'descripción', result.fuentes.comentarios > 0 && 'comentarios del creador', result.fuentes.transcripcion && 'audio'].filter(Boolean).join(', ')
+    : ''
   const notice = result && (
     <div className="flex flex-col gap-1 px-1 text-xs font-semibold">
-      {result.aviso ? (
-        <p className="flex gap-1.5 text-terracotta">
-          <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
-          {result.aviso}
-        </p>
-      ) : (
+      {sourceList && (
         <p className={`flex gap-1.5 ${result.completa ? 'text-olive' : 'text-terracotta'}`}>
           <Info className="mt-px size-3.5 shrink-0" aria-hidden />
-          {result.completa
-            ? 'Análisis completado (incluyendo texto de la descripción del vídeo)'
-            : 'Lectura parcial de la descripción: revisa ingredientes y pasos antes de guardar.'}
+          Análisis completado con: {sourceList}
+          {result.motor === 'claude' ? ' · combinado con IA' : ''}
         </p>
       )}
-      {result.ingredientesDeducidos && <p className={muted}>Ingredientes deducidos del texto, sin cantidades: complétalos.</p>}
+      {result.avisos.map((a) => (
+        <p key={a} className="flex gap-1.5 text-terracotta">
+          <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
+          {a}
+        </p>
+      ))}
+      {result.recipe.revisar && <p className={muted}>Marcada «Revisar ingredientes»: corrige lo que falte y pulsa guardar.</p>}
     </div>
   )
 
   return (
     <div className="flex flex-col gap-2.5">
-      <form onSubmit={submit} className={`${card} flex flex-col gap-2 p-3`}>
-        <input
-          type="url"
-          inputMode="url"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          required
-          placeholder="Pega un enlace de TikTok, Instagram o YouTube"
-          aria-label="Enlace de la receta"
-          className={field}
-        />
+      {toast && (
+        <div role="status" className="fixed inset-x-4 top-[max(env(safe-area-inset-top),0.75rem)] z-40 mx-auto max-w-sm rounded-3xl bg-olive px-4 py-3 text-center text-sm font-bold text-on-accent">
+          {toast}
+        </div>
+      )}
+      <form
+        onSubmit={(e: FormEvent) => {
+          e.preventDefault()
+          run(url.trim())
+        }}
+        className={`${card} flex flex-col gap-2 p-3`}
+      >
+        <div className="flex gap-2">
+          <input
+            type="url"
+            inputMode="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            required
+            placeholder="Enlace de TikTok, Instagram o YouTube"
+            aria-label="Enlace de la receta"
+            className={`${field} flex-1`}
+          />
+          <button type="button" onClick={pasteFromClipboard} disabled={loading} aria-label="Pegar enlace del portapapeles" className="grid size-10 shrink-0 place-items-center rounded-full bg-linen text-olive active:opacity-70 dark:bg-moss-light">
+            <ClipboardPaste className="size-5" aria-hidden />
+          </button>
+        </div>
         <div className="flex items-center gap-2">
           <span className={`flex-1 text-xs font-semibold ${platform ? 'text-olive' : muted}`}>
-            {platform ? `Detectado: ${platform}` : 'Reels, Shorts y vídeos de TikTok'}
+            {loading ? 'Leyendo descripción, comentarios y audio…' : platform ? `Detectado: ${platform}` : 'Reels, Shorts y vídeos de TikTok'}
           </span>
           <button type="submit" disabled={loading || !platform} className={primaryBtn}>
             {loading && <LoaderCircle className="size-4 animate-spin" aria-hidden />}
-            {loading ? 'Leyendo…' : 'Importar'}
+            {loading ? 'Importando…' : 'Importar'}
           </button>
         </div>
         {error && <p className="text-sm font-semibold text-brick">{error}</p>}
       </form>
-      {result && <RecipeEditor key={result.recipe.id} recipe={result.recipe} notice={notice} startPasting={!!result.aviso} />}
+      {result && <RecipeEditor key={result.recipe.id} recipe={result.recipe} notice={notice} startPasting={!result.recipe.ingredientes.length && !result.recipe.pasos.length} />}
     </div>
   )
 }

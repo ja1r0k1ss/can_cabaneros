@@ -1,4 +1,5 @@
 import { buildImport, detectPlatform, type ImportDraft } from '../lib/recipeImport'
+import type { ParseVideoResponse } from '../types/recipe'
 
 export interface UrlImportResult extends ImportDraft {
   platform: string
@@ -48,4 +49,35 @@ export async function importFromUrl(url: string): Promise<UrlImportResult> {
     }
   }
   return { ...buildImport(url, {}), platform, aviso: `Instagram no permite leer publicaciones sin iniciar sesión. ${PASTE_HINT}` }
+}
+
+export type ImportResult = ParseVideoResponse
+
+/**
+ * Server pipeline first (description + creator comments + audio transcript, merged by Claude). When the function
+ * isn't reachable (static hosting, `vite preview`, offline) falls back to what the browser can read on its own.
+ */
+export async function importRecipe(url: string): Promise<ImportResult> {
+  let res: Response | undefined
+  try {
+    res = await fetch('/api/parse-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: AbortSignal.timeout(70_000),
+    })
+  } catch {
+    res = undefined
+  }
+  if (res?.status === 400) throw new Error(((await res.json()) as { error?: string }).error ?? 'Enlace no válido')
+  if (res?.ok && res.headers.get('content-type')?.includes('application/json')) return (await res.json()) as ImportResult
+
+  const local = await importFromUrl(url)
+  return {
+    recipe: { ...local.recipe, revisar: !local.completa || local.ingredientesDeducidos },
+    fuentes: { descripcion: local.platform === 'TikTok' && !local.aviso, comentarios: 0, transcripcion: false },
+    motor: 'reglas',
+    completa: local.completa,
+    avisos: local.aviso ? [local.aviso] : [],
+  }
 }
